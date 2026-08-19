@@ -1,0 +1,38 @@
+# Tooling configuration only. This project is not packaged for PyPI, it ships as
+# a ZIP that FilaMan installs, so there is no [project] table on purpose.
+#
+# The plugin runs on Python 3.11+ inside FilaMan. The scripts under tools/ and
+# the test suite deliberately stay compatible with the system Python on macOS
+# (3.9), so they work without setting anything up.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["bambu_usage", "tools", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes, catches unused imports and names
+    "I",    # import sorting
+    "UP",   # pyupgrade
+    "B",    # bugbear, catches the usual runtime traps
+    "SIM",  # simplifications
+    "PTH",  # prefer pathlib over os.path
+    "RUF",
+]
+ignore = [
+    "E501",  # line length is handled by the formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests name things for readability, not for brevity.
+"tests/*" = ["B011"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+# The suite runs on plain unittest as well:
+#   python3 -m unittest discover -s tests -t .
+testpaths = ["tests"]

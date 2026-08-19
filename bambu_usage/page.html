@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FilaMan - Bambu Usage</title>
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:wght@500;600;700&display=swap" rel="stylesheet" />
+  <script>
+    // Adopt the theme the user picked in FilaMan itself, before first paint.
+    (function () {
+      var t = localStorage.getItem('theme') || 'brand';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <style>
+    /* Token names and values mirror FilaMan so the page belongs to the app.
+       Everything is inline because the plugin ZIP rejects .css and .js files. */
+    :root {
+      --font-sans: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+      --font-serif: "Fraunces", "Georgia", serif;
+      --radius-md: 14px;
+      --radius-sm: 12px;
+      --shadow-sm: 0 6px 18px rgba(0,0,0,0.08);
+      --transition: 220ms ease;
+    }
+
+    html[data-theme="brand"] {
+      --bg-elevated: #13261d; --bg-soft: #183225;
+      --text: #e9f3ec; --text-muted: #b5c7bd;
+      --accent: #4ee3a2; --accent-3: #f7c86a;
+      --border: rgba(255,255,255,0.08);
+      --error-text: #fca5a5; --success-text: #86efac;
+      --gradient-hero: radial-gradient(circle at 20% 20%, rgba(78,227,162,0.25), transparent 60%),
+        radial-gradient(circle at 80% 0%, rgba(108,198,255,0.18), transparent 55%),
+        linear-gradient(140deg, #0c1612 0%, #12251b 45%, #0b1410 100%);
+    }
+    html[data-theme="light"] {
+      --bg-elevated: #ffffff; --bg-soft: #f1ece3;
+      --text: #1a231e; --text-muted: #53645a;
+      --accent: #1c9b6b; --accent-3: #d38e2c;
+      --border: rgba(26,35,30,0.12);
+      --error-text: #b91c1c; --success-text: #15803d;
+      --gradient-hero: radial-gradient(circle at 20% 20%, rgba(28,155,107,0.16), transparent 60%),
+        radial-gradient(circle at 80% 0%, rgba(43,123,199,0.14), transparent 55%),
+        linear-gradient(140deg, #f8f6f1 0%, #f1ece3 50%, #ffffff 100%);
+    }
+    html[data-theme="dark"] {
+      --bg-elevated: #141825; --bg-soft: #1a2032;
+      --text: #eef1f7; --text-muted: #9aa4b7;
+      --accent: #73d1ff; --accent-3: #f3a05f;
+      --border: rgba(255,255,255,0.08);
+      --error-text: #fca5a5; --success-text: #86efac;
+      --gradient-hero: radial-gradient(circle at 20% 20%, rgba(115,209,255,0.25), transparent 60%),
+        radial-gradient(circle at 80% 0%, rgba(140,243,178,0.18), transparent 55%),
+        linear-gradient(145deg, #0b0d12 0%, #0f1421 55%, #0b0d12 100%);
+    }
+
+    * { box-sizing: border-box; margin: 0; }
+    body {
+      font-family: var(--font-sans);
+      background: var(--gradient-hero);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .page-content { max-width: 900px; margin: 0 auto; padding: 32px 24px; }
+
+    .hero { margin-bottom: 28px; }
+    .hero h1 {
+      font-family: var(--font-serif);
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .hero p { color: var(--text-muted); max-width: 62ch; margin-top: 6px; }
+
+    .fm-card {
+      background: var(--bg-elevated);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      padding: 24px;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 20px;
+    }
+    .fm-card-header {
+      font-family: var(--font-serif);
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin: 0 0 14px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 14px;
+      border-radius: 999px;
+      background: var(--bg-soft);
+      border: 1px solid var(--border);
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--text-muted);
+      transition: background var(--transition);
+    }
+    .dot.ok { background: var(--success-text); }
+    .dot.err { background: var(--error-text); }
+
+    .notice {
+      border-left: 3px solid var(--accent-3);
+      background: var(--bg-soft);
+      border-radius: var(--radius-sm);
+      padding: 16px 18px;
+      color: var(--text-muted);
+    }
+    .notice strong { color: var(--text); }
+
+    dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 8px 20px; margin: 0; }
+    dl.kv dt { color: var(--text-muted); font-size: 0.875rem; }
+    dl.kv dd { margin: 0; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+
+    ol.steps { margin: 0; padding-left: 20px; color: var(--text-muted); }
+    ol.steps li { margin-bottom: 10px; }
+    ol.steps li strong { color: var(--text); font-weight: 600; }
+    ol.steps li.done .done-marker { color: var(--success-text); font-weight: 500; }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.85em;
+      background: var(--bg-soft);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1px 6px;
+    }
+
+    footer { color: var(--text-muted); font-size: 0.8rem; margin-top: 28px; }
+
+    @media (max-width: 560px) {
+      dl.kv { grid-template-columns: 1fr; gap: 2px 0; }
+      dl.kv dd { margin-bottom: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-content">
+
+    <div class="hero">
+      <h1 data-i18n="page.title"></h1>
+      <p data-i18n="page.subtitle"></p>
+    </div>
+
+    <div class="fm-card">
+      <h2 class="fm-card-header" data-i18n="status.heading"></h2>
+      <p>
+        <span class="pill">
+          <span class="dot" id="health-dot"></span>
+          <span id="health-label" data-i18n="status.checking"></span>
+        </span>
+      </p>
+      <dl class="kv" style="margin-top:16px">
+        <dt data-i18n="status.version"></dt><dd id="v-version">-</dd>
+        <dt data-i18n="status.tracking"></dt><dd id="v-tracking">-</dd>
+        <dt data-i18n="status.printersWatched"></dt><dd id="v-printers">-</dd>
+      </dl>
+    </div>
+
+    <div class="fm-card">
+      <h2 class="fm-card-header" data-i18n="notice.heading"></h2>
+      <div class="notice">
+        <strong data-i18n="notice.lead"></strong>
+        <span data-i18n="notice.body"></span>
+      </div>
+    </div>
+
+    <div class="fm-card">
+      <h2 class="fm-card-header" data-i18n="roadmap.heading"></h2>
+      <ol class="steps">
+        <li class="done">
+          <strong data-i18n="roadmap.stage1Name"></strong>
+          <span class="done-marker" data-i18n="roadmap.done"></span>
+          <span data-i18n="roadmap.stage1"></span>
+        </li>
+        <li><strong data-i18n="roadmap.stage2Name"></strong> <span data-i18n="roadmap.stage2"></span></li>
+        <li><strong data-i18n="roadmap.stage3Name"></strong> <span data-i18n="roadmap.stage3"></span></li>
+        <li><strong data-i18n="roadmap.stage4Name"></strong> <span data-i18n="roadmap.stage4"></span></li>
+      </ol>
+    </div>
+
+    <div class="fm-card">
+      <h2 class="fm-card-header" data-i18n="requirements.heading"></h2>
+      <dl class="kv">
+        <dt data-i18n="requirements.printers"></dt><dd id="req-printers"></dd>
+        <dt data-i18n="requirements.credentials"></dt><dd data-i18n="requirements.credentialsValue"></dd>
+        <dt data-i18n="requirements.network"></dt><dd data-i18n="requirements.networkValue"></dd>
+      </dl>
+    </div>
+
+    <footer data-i18n="page.footer"></footer>
+
+  </div>
+
+  <script>
+    // Mirrors FilaMan's own i18n contract (frontend/src/lib/i18n.ts): the chosen
+    // language lives in localStorage['lang'], dictionaries are nested JSON
+    // addressed by dotted keys, and {name} placeholders are interpolated.
+    // Because the contract is the same, this page follows whatever language the
+    // user selected in FilaMan, with no switch of its own.
+    (function () {
+      var MOUNT = '/bambu-usage';
+      var FALLBACK_LANGUAGE = 'en';
+      var DRIVER_KEY = 'bambulab';
+
+      var dict = {};
+      var fallbackDict = {};
+
+      function resolve(source, key) {
+        var node = source;
+        var parts = key.split('.');
+        for (var i = 0; i < parts.length; i++) {
+          if (node === null || typeof node !== 'object') { return undefined; }
+          node = node[parts[i]];
+        }
+        return typeof node === 'string' ? node : undefined;
+      }
+
+      // Falls back key by key, so a partial translation shows English rather
+      // than a blank, and an unknown key shows itself rather than nothing.
+      function t(key, vars) {
+        var text = resolve(dict, key);
+        if (text === undefined) { text = resolve(fallbackDict, key); }
+        if (text === undefined) { text = key; }
+        if (vars) {
+          Object.keys(vars).forEach(function (name) {
+            text = text.split('{' + name + '}').join(String(vars[name]));
+          });
+        }
+        return text;
+      }
+
+      function translatePage() {
+        document.querySelectorAll('[data-i18n]').forEach(function (el) {
+          el.textContent = t(el.getAttribute('data-i18n'));
+        });
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(function (el) {
+          el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+        });
+        document.querySelectorAll('[data-i18n-title]').forEach(function (el) {
+          el.title = t(el.getAttribute('data-i18n-title'));
+        });
+        // The one string carrying a placeholder, so interpolation stays exercised.
+        document.getElementById('req-printers').textContent =
+          t('requirements.printersValue', { driver: DRIVER_KEY });
+      }
+
+      function loadDictionary(language) {
+        return fetch(MOUNT + '/i18n/' + encodeURIComponent(language), {
+          headers: { 'Accept': 'application/json' }
+        }).then(function (r) {
+          if (!r.ok) { throw new Error('HTTP ' + r.status); }
+          return r.json();
+        });
+      }
+
+      function showHealth() {
+        var dot = document.getElementById('health-dot');
+        var label = document.getElementById('health-label');
+
+        return fetch(MOUNT + '/health', { headers: { 'Accept': 'application/json' } })
+          .then(function (r) {
+            if (!r.ok) { throw new Error('HTTP ' + r.status); }
+            return r.json();
+          })
+          .then(function (d) {
+            dot.classList.add('ok');
+            label.textContent = t('status.mounted');
+            document.getElementById('v-version').textContent = d.version || '-';
+            document.getElementById('v-tracking').textContent =
+              t(d.tracking_active ? 'status.active' : 'status.inactive');
+            document.getElementById('v-printers').textContent = d.printers_watched;
+          })
+          .catch(function (e) {
+            dot.classList.add('err');
+            label.textContent = t('status.unreachable');
+            document.getElementById('v-version').textContent = String(e.message || e);
+          });
+      }
+
+      function init() {
+        var language = localStorage.getItem('lang') || FALLBACK_LANGUAGE;
+        document.documentElement.setAttribute('lang', language);
+
+        // English is loaded as well, so a partial translation degrades per key.
+        var wanted = loadDictionary(language);
+        var english = language === FALLBACK_LANGUAGE
+          ? wanted
+          : loadDictionary(FALLBACK_LANGUAGE).catch(function () { return {}; });
+
+        Promise.all([wanted.catch(function () { return {}; }), english])
+          .then(function (loaded) {
+            dict = loaded[0];
+            fallbackDict = loaded[1];
+          })
+          .then(translatePage)
+          .then(showHealth);
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>

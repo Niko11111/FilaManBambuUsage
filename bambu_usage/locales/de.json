@@ -1,0 +1,48 @@
+{
+  "page": {
+    "title": "Bambu Verbrauchserfassung",
+    "subtitle": "Bucht das bei Bambu-Lab-Drucken verbrauchte Filament von den passenden FilaMan-Spulen ab und führt eine Druckhistorie mit Plate-Vorschau.",
+    "footer": "FilaManBambuUsage, MIT. Verbrauchslogik portiert aus OpenSpoolMan (MIT)."
+  },
+  "status": {
+    "heading": "Status",
+    "checking": "wird geprüft",
+    "mounted": "Plugin eingebunden",
+    "unreachable": "Router nicht erreichbar",
+    "version": "Version",
+    "tracking": "Erfassung",
+    "active": "aktiv",
+    "inactive": "inaktiv",
+    "printersWatched": "Überwachte Drucker"
+  },
+  "notice": {
+    "heading": "Noch nichts zu sehen",
+    "lead": "Dieses Plugin ist Meilenstein 1: Spezifikation und Gerüst.",
+    "body": "Es lässt sich bauen, installieren und einbinden, erfasst aber nichts. Es verbindet sich zu keinem Drucker und verändert keine Spule. Der Zweck dieser Stufe ist der Nachweis, dass die Plugin-Lösung trägt, bevor Logik entsteht."
+  },
+  "roadmap": {
+    "heading": "Was kommt",
+    "done": "(erledigt)",
+    "stage1Name": "Stufe 1",
+    "stage1": "Entwurf, Gerüst, installierbares Paket",
+    "stage2Name": "Stufe 2",
+    "stage2": "Listener je Drucker, 3MF auswerten, Netzwerkdrucke abbuchen, Historie mit Vorschau, Zuordnung nachträglich korrigieren",
+    "stage3Name": "Stufe 3",
+    "stage3": "lokale Drucke über die Filamentwechsel-Erkennung",
+    "stage4Name": "Stufe 4",
+    "stage4": "layerweises Tracking, anteilige Abbuchung bei Abbruch"
+  },
+  "requirements": {
+    "heading": "Voraussetzungen",
+    "printers": "Drucker",
+    "printersValue": "mindestens einer mit dem Treiber {driver}",
+    "credentials": "Zugangsdaten",
+    "credentialsValue": "werden aus dem Drucker übernommen, keine Doppeleingabe",
+    "network": "Netz",
+    "networkValue": "MQTT und FTPS im LAN, keine Bambu-Cloud"
+  },
+  "errors": {
+    "notImplemented": "Noch nicht implementiert",
+    "localesMissing": "Im installierten Plugin fehlen die Übersetzungsdateien"
+  }
+}

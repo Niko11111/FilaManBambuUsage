@@ -1,0 +1,21 @@
+# Build output
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Tooling caches
+.ruff_cache/
+.pytest_cache/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store

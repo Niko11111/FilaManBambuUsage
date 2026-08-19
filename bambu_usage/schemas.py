@@ -1,0 +1,104 @@
+"""Pydantic models for the plugin's HTTP surface.
+
+Kept separate from models.py so the wire format can change without touching
+the database layout, and so router.py never hands raw rows to the page.
+
+May import: pydantic. Must not import tracker, router, service or models.
+Enforced by tools/check_architecture.py.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from pydantic import BaseModel, Field
+
+
+class PluginSettings(BaseModel):
+    """Behaviour for one printer, or the global defaults.
+
+    ``printer_id`` 0 addresses the global row. See docs/04_Data_Model.md.
+    """
+
+    printer_id: int = 0
+    tracking_enabled: bool = True
+    auto_spend: bool = True
+    spend_on_cancel: bool = False
+    clear_assignment_when_empty: bool = False
+    history_retention_days: int = Field(default=365, ge=0)
+
+
+class PrinterStatus(BaseModel):
+    """Live state of one listener, shown at the top of the plugin page."""
+
+    printer_id: int
+    printer_name: str
+    connected: bool
+    tracking_enabled: bool
+    current_print_id: int | None = None
+    current_file_name: str | None = None
+    progress_percent: int | None = None
+    last_error: str | None = None
+
+
+class FilamentUsage(BaseModel):
+    """One slicer filament of one print.
+
+    ``spool_id`` is None when the slot could not be resolved. The page
+    highlights those rows and offers the dropdown to assign a spool.
+    """
+
+    id: int
+    filament_id: int
+    slot_index: str | None = None
+    spool_id: int | None = None
+    spool_label: str | None = None
+    material: str | None = None
+    color_hex: str | None = None
+    estimated_grams: float | None = None
+    spent_grams: float | None = None
+    spent_at: datetime | None = None
+    manual_override: bool = False
+
+
+class PrintRecord(BaseModel):
+    """One print job with its per-filament breakdown."""
+
+    id: int
+    printer_id: int
+    printer_name: str | None = None
+    file_name: str
+    print_type: str
+    started_at: datetime
+    finished_at: datetime | None = None
+    status: str
+    spent: bool
+    has_thumbnail: bool = False
+    error: str | None = None
+    filaments: list[FilamentUsage] = Field(default_factory=list)
+
+
+class AssignSpoolRequest(BaseModel):
+    """Assign a spool to a filament row after the fact.
+
+    Used for local prints, where no ams_mapping is available, and whenever the
+    automatic resolution came up empty.
+    """
+
+    spool_id: int | None = None
+    spend_now: bool = False
+
+
+class CorrectUsageRequest(BaseModel):
+    """Override the booked amount for one filament row."""
+
+    grams: float = Field(ge=0)
+
+
+class HealthResponse(BaseModel):
+    """Answer of the health endpoint, also used to prove the router mounted."""
+
+    plugin: str = "bambu_usage"
+    version: str
+    tracking_active: bool = False
+    printers_watched: int = 0

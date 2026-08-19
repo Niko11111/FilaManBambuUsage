@@ -1,0 +1,29 @@
+FilaManBambuUsage
+=================
+
+This project contains logic ported from OpenSpoolMan.
+
+    OpenSpoolMan
+    https://github.com/drndos/openspoolman
+    Copyright (c) 2024 Filip Bednarik
+    Licensed under the MIT License
+
+The following areas are derived from that project and were reimplemented
+against FilaMan's data model rather than Spoolman's:
+
+  - Extraction of per-filament consumption from the Bambu 3MF archive
+    (Metadata/slice_info.config), see bambu_usage/threemf.py
+  - Mapping of slicer filament slots to physical AMS trays via the
+    ams_mapping reported with the print command, see bambu_usage/tracker.py
+  - The print history model with per-slot consumption and manual correction,
+    see bambu_usage/models.py
+
+No code was taken from the FilaMan plugin repositories
+(Fire-Devils/filaman-bambulab-plugin, filaman-spoolmanapi-plugin,
+filaman-bambuddy-plugin). At the time of writing those repositories carry no
+LICENSE file and are therefore all rights reserved. They were read as a
+structural reference for the plugin manifest and module layout only.
+
+FilaMan itself (Fire-Devils/filaman-system) is MIT licensed. This plugin
+imports from its public application modules at runtime but ships none of its
+code.
