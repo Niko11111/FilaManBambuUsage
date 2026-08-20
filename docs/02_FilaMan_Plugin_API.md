@@ -277,7 +277,8 @@ exception: FastAPI resolves dependencies while the route decorators run, so
 | `app.models.printer.Printer` | finding printers with `driver_key == "bambulab"`, reading `driver_config` |
 | `app.models.printer.PrinterSlot` | `slot_no`, `custom_fields["slot_index"]` |
 | `app.models.printer.PrinterSlotAssignment` | `spool_id` per slot |
-| `app.models.spool.Spool` | loading a spool |
+| `app.models.spool.Spool` | loading a spool, and its purchase price for what a print cost |
+| `app.models.app_settings.AppSettings` | the currency code, so a cost can be labelled |
 | `app.services.spool_service.SpoolService.record_consumption` | deducting |
 | `app.api.deps.DBSession`, `RequirePermission` | securing endpoints |
 

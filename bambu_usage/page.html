@@ -379,6 +379,7 @@
       var printers = [];
       var settingsRows = new Map();
       var historyOffset = 0;
+      var currency = '';
 
       /* ── translation ─────────────────────────────────────────── */
 
@@ -520,6 +521,7 @@
           label.textContent = t('status.mounted');
           document.getElementById('health-version').textContent =
             t('status.version') + ' ' + health.version;
+          currency = health.currency || '';
         }).catch(function () {
           document.getElementById('health-dot').className = 'dot bad';
           document.getElementById('health-label').textContent = t('status.unreachable');
@@ -680,6 +682,13 @@
             && BAD_STATUS[record.status]) {
           meta.appendChild(el('span', 'badge', t('history.stoppedAt', {
             percent: Math.round(record.completed_fraction * 100)
+          })));
+        }
+
+        if (record.cost !== null && record.cost !== undefined) {
+          meta.appendChild(el('span', 'badge', t('history.cost', {
+            amount: record.cost.toFixed(2),
+            currency: currency
           })));
         }
 

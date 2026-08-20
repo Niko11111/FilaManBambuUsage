@@ -56,12 +56,15 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
         self.spools: dict[int, SimpleNamespace] = {}
         self.consumptions: list[tuple[int, float, str | None]] = []
         self.adjustments: list[tuple[int, float]] = []
+        # spool id -> price of one gram, empty unless a test says otherwise.
+        self.prices: dict[int, float] = {}
 
         for name, replacement in (
             ("resolve_spool_for_slot", self.fake_resolve_spool),
             ("load_spool", self.fake_load_spool),
             ("record_consumption", self.fake_record_consumption),
             ("record_adjustment", self.fake_record_adjustment),
+            ("load_spool_prices", self.fake_load_spool_prices),
         ):
             patcher = mock.patch.object(filaman, name, replacement)
             patcher.start()
@@ -80,6 +83,9 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
     async def fake_record_adjustment(self, db, spool, delta_grams, event_at, note=None):
         self.adjustments.append((spool.id, round(delta_grams, 3)))
         await db.commit()
+
+    async def fake_load_spool_prices(self, db, spool_ids):
+        return {spool_id: self.prices[spool_id] for spool_id in spool_ids if spool_id in self.prices}
 
     def have_spools(self, *spool_ids):
         for spool_id in spool_ids:
@@ -362,6 +368,22 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(record.has_thumbnail)
         self.assertEqual([usage.spool_id for usage in record.filaments], [7, 8])
         self.assertEqual([usage.spent_grams for usage in record.filaments], [41.2, 12.5])
+        # No price on either spool, so no claim about what it cost.
+        self.assertIsNone(record.cost)
+
+    async def test_the_history_carries_what_the_print_cost(self):
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+        self.prices = {7: 0.025, 8: 0.04}
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            await service.finish_print(db, print_id, models.STATUS_FINISHED, AUTO, NOW)
+
+            history = await service.get_history(db)
+
+        # 41.2 g at 2.5 cent plus 12.5 g at 4 cent.
+        self.assertAlmostEqual(history[0].cost, 41.2 * 0.025 + 12.5 * 0.04)
 
     async def test_the_preview_is_served_from_the_database(self):
         async with self.sessions() as db:

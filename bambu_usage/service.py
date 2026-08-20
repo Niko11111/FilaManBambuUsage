@@ -548,7 +548,7 @@ async def get_history(db: AsyncSession, limit: int = 50, offset: int = 0) -> lis
     resolving the names there costs nothing, while doing it here would add two
     more couplings into FilaMan for display text alone.
     """
-    from . import store
+    from . import filaman, store
     from .schemas import FilamentUsage, PrintRecord
 
     prints = await store.list_prints(db, limit=limit, offset=offset)
@@ -557,6 +557,10 @@ async def get_history(db: AsyncSession, limit: int = 50, offset: int = 0) -> lis
     by_print: dict[int, list[Any]] = {}
     for row in rows:
         by_print.setdefault(int(row.print_id), []).append(row)
+
+    prices = await filaman.load_spool_prices(
+        db, sorted({int(row.spool_id) for row in rows if row.spool_id is not None})
+    )
 
     records = []
     for entry in prints:
@@ -588,6 +592,7 @@ async def get_history(db: AsyncSession, limit: int = 50, offset: int = 0) -> lis
                 status=entry.status,
                 spent=bool(entry.spent),
                 completed_fraction=entry.completed_fraction,
+                cost=print_cost(by_print.get(int(entry.id), []), prices),
                 has_thumbnail=entry.thumbnail_mime is not None,
                 error=entry.error,
                 filaments=filaments,
@@ -637,6 +642,26 @@ async def get_thumbnail(db: AsyncSession, print_id: int) -> tuple[bytes, str] | 
 # Note written to the spool log when an amount was corrected by hand. The file
 # name of the print is the note on a normal booking, see spend_print.
 _CORRECTION_NOTE = "correction"
+
+
+def print_cost(rows: Iterable[Any], prices: dict[int, float]) -> float | None:
+    """What a print cost, or None when nothing behind it carries a price.
+
+    Costed on what was actually booked where there is a booking, on the estimate
+    otherwise, which is the same rule the booking itself follows. A row whose
+    spool has no price is skipped rather than counted as free: a total that
+    silently leaves parts out would look like a bargain.
+    """
+    total = None
+
+    for row in rows:
+        price = prices.get(row.spool_id)
+        amount = _amount_of(row)
+        if price is None or amount is None:
+            continue
+        total = (total or 0.0) + price * amount
+
+    return total
 
 
 def _scaled(value: float | None, share: float) -> float | None:

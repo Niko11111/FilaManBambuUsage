@@ -186,11 +186,14 @@ async def health(db: DBSession) -> schemas.HealthResponse:
 
     ``tables_ready`` stays a fact about this worker: whether it has run its own
     one-time setup, which is the only way to see a request driven bootstrap from
-    outside.
+    outside. ``currency`` rides along because the page needs it to label a cost
+    and FilaMan shows its application settings to administrators only.
     """
     watched: list[schemas.PrinterStatus] = []
+    currency: str | None = None
     with contextlib.suppress(SQLAlchemyError, filaman.FilaManUnavailableError):
         watched = await service.get_printer_status(db)
+        currency = await filaman.load_currency(db)
 
     return schemas.HealthResponse(
         plugin="bambu_usage",
@@ -198,6 +201,7 @@ async def health(db: DBSession) -> schemas.HealthResponse:
         tracking_active=any(entry.connected for entry in watched),
         printers_watched=len(watched),
         tables_ready=_tables_ready.is_set(),
+        currency=currency,
     )
 
 

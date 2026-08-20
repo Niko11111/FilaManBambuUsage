@@ -84,6 +84,9 @@ class PrintRecord(BaseModel):
     spent: bool
     # How far a print that did not finish got, 0.0 to 1.0. None when unknown.
     completed_fraction: float | None = None
+    # What the print cost, in FilaMan's currency. None when no spool involved
+    # carries the numbers to work it out.
+    cost: float | None = None
     has_thumbnail: bool = False
     error: str | None = None
     filaments: list[FilamentUsage] = Field(default_factory=list)
@@ -116,3 +119,6 @@ class HealthResponse(BaseModel):
     # Whether the worker answering this request has run its one-time setup. The
     # plugin has no startup hook, so this is the only outside view of it.
     tables_ready: bool = False
+    # FilaMan's currency code, so the page can label a cost without a second
+    # endpoint and without administrator rights.
+    currency: str | None = None

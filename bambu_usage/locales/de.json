@@ -30,6 +30,7 @@
     "span": "{from}% bis {to}% des Drucks",
     "estimated": "Geschätzt",
     "booked": "Gebucht",
+    "cost": "{amount} {currency}",
     "spool": "Spule",
     "unassigned": "nicht zugeordnet",
     "chooseSpool": "Spule auswählen",

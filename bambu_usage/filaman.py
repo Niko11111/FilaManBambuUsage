@@ -328,3 +328,63 @@ def background_sessions(engine: AsyncEngine) -> Any:
     """Return a session maker bound to *engine*."""
     (async_sessionmaker,) = _import_names("sqlalchemy.ext.asyncio", "async_sessionmaker")
     return async_sessionmaker(engine, expire_on_commit=False)
+
+
+async def load_currency(db: AsyncSession) -> str | None:
+    """The three letter currency code FilaMan shows money in.
+
+    Read here rather than by the page, because FilaMan exposes its application
+    settings to administrators only, while the plugin page is for anyone who may
+    see a spool.
+    """
+    (select,) = _import_names("sqlalchemy", "select")
+    (AppSettings,) = _import_names("app.models.app_settings", "AppSettings")
+
+    row = (await db.execute(select(AppSettings.currency).limit(1))).first()
+    return str(row.currency) if row is not None and row.currency else None
+
+
+async def load_spool_prices(db: AsyncSession, spool_ids: list[int]) -> dict[int, float]:
+    """Return what one gram of filament costs, per spool.
+
+    Spools without the numbers to work it out are simply absent from the result.
+    """
+    if not spool_ids:
+        return {}
+
+    (select,) = _import_names("sqlalchemy", "select")
+    (Spool,) = _import_names("app.models.spool", "Spool")
+
+    rows = (await db.execute(select(Spool).where(Spool.id.in_(spool_ids)))).scalars().all()
+
+    prices = {}
+    for row in rows:
+        price = price_per_gram(row)
+        if price is not None:
+            prices[row.id] = price
+    return prices
+
+
+def price_per_gram(spool: Any) -> float | None:
+    """What one gram of filament on *spool* cost, or None if it cannot be said.
+
+    FilaMan's own arithmetic: the net material of a spool is
+    ``initial_total_weight_g`` minus ``empty_spool_weight_g``, which is exactly
+    the figure ``SpoolService.rebuild_remaining_weight()`` starts a spool at.
+
+    A spool missing any of the three numbers gets nothing. There is no fallback
+    to the filament price, because what that refers to is not established, and a
+    made up amount of money sitting next to a real one is worse than a gap.
+    """
+    price = spool.purchase_price
+    total = spool.initial_total_weight_g
+    empty = spool.empty_spool_weight_g
+
+    if price is None or total is None or empty is None:
+        return None
+
+    net = float(total) - float(empty)
+    if net <= 0:
+        return None
+
+    return float(price) / net

@@ -7,10 +7,12 @@ the whole point of keeping service.py free of MQTT and HTTP.
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 
 from bambu_usage.service import (
     EXTERNAL_SLOT_INDEX,
     booking_factor,
+    print_cost,
     EXTERNAL_SPOOL_AMS_ID,
     EXTERNAL_SPOOL_TRAY_ID,
     TRAYS_PER_AMS,
@@ -190,6 +192,36 @@ class SplitShareTest(unittest.TestCase):
         # That part of the print is over, and its row was closed off already.
         self.assertIsNone(split_share(0.4, None, 0.2))
         self.assertIsNone(split_share(0.0, 0.4, 0.6))
+
+
+def usage(spool_id, estimated=None, spent=None):
+    """One filament row, reduced to what a cost is worked out from."""
+    return SimpleNamespace(spool_id=spool_id, estimated_grams=estimated, spent_grams=spent)
+
+
+class PrintCostTest(unittest.TestCase):
+    PRICES = {7: 0.025, 8: 0.04}
+
+    def test_what_two_filaments_cost_together(self):
+        rows = [usage(7, estimated=40.0), usage(8, estimated=10.0)]
+        self.assertAlmostEqual(print_cost(rows, self.PRICES), 1.4)
+
+    def test_a_booked_amount_beats_the_estimate(self):
+        # Same rule the booking follows, so the money matches the grams.
+        self.assertAlmostEqual(print_cost([usage(7, estimated=40.0, spent=20.0)], self.PRICES), 0.5)
+
+    def test_a_spool_without_a_price_is_skipped_not_counted_as_free(self):
+        rows = [usage(7, estimated=40.0), usage(99, estimated=10.0)]
+        self.assertAlmostEqual(print_cost(rows, self.PRICES), 1.0)
+
+    def test_nothing_priced_at_all_is_not_zero(self):
+        # Zero would read as a print that cost nothing, which is a claim. None
+        # says the question cannot be answered.
+        self.assertIsNone(print_cost([usage(99, estimated=40.0)], self.PRICES))
+        self.assertIsNone(print_cost([usage(None, estimated=40.0)], self.PRICES))
+
+    def test_a_row_without_an_amount(self):
+        self.assertIsNone(print_cost([usage(7)], self.PRICES))
 
 
 if __name__ == "__main__":

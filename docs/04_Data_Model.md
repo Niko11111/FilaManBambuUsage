@@ -66,7 +66,24 @@ From `app/models/printer.py` and `app/models/spool.py`, read only.
 
 ### spools
 
-Only ever touched through `SpoolService`, never written directly.
+Only ever **written** through `SpoolService`, never directly. Three fields are
+read on top of that, for what a print cost:
+
+| Field | Use |
+|---|---|
+| `purchase_price` | what the spool cost |
+| `initial_total_weight_g` | gross weight when it was new |
+| `empty_spool_weight_g` | the empty spool |
+
+The price of one gram is `purchase_price / (initial_total_weight_g -
+empty_spool_weight_g)`. That net weight is FilaMan's own arithmetic, the figure
+`SpoolService.rebuild_remaining_weight()` starts a spool at, so both agree on
+what "a gram of filament" means.
+
+A spool missing any of the three gets no price and is left out of the total. The
+filament price is deliberately not used as a fallback: what it refers to is not
+established, and a made up amount of money next to a real one is worse than a
+gap.
 
 ## 3. Deducting
 

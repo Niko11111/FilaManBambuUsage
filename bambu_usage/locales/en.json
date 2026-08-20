@@ -30,6 +30,7 @@
     "span": "{from}% to {to}% of the print",
     "estimated": "Estimated",
     "booked": "Booked",
+    "cost": "{amount} {currency}",
     "spool": "Spool",
     "unassigned": "not assigned",
     "chooseSpool": "Choose a spool",

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import unittest
 
-from bambu_usage.filaman import BambuPrinter, _slot_index_of, _to_bambu_printer
+from bambu_usage.filaman import BambuPrinter, _slot_index_of, _to_bambu_printer, price_per_gram
 
 
 class FakePrinter:
@@ -109,6 +109,38 @@ class SlotIndexTest(unittest.TestCase):
 
     def test_the_external_spool_is_just_another_index(self):
         self.assertEqual(_slot_index_of(FakeSlot({"slot_index": "255-254"})), "255-254")
+
+
+class FakeSpool:
+    """The three numbers a price per gram is worked out from."""
+
+    def __init__(self, purchase_price=25.0, initial_total_weight_g=1250.0, empty_spool_weight_g=250.0):
+        self.purchase_price = purchase_price
+        self.initial_total_weight_g = initial_total_weight_g
+        self.empty_spool_weight_g = empty_spool_weight_g
+
+
+class PricePerGramTest(unittest.TestCase):
+    """FilaMan's own net weight arithmetic, borrowed rather than invented."""
+
+    def test_a_spool_with_everything(self):
+        # 25 currency for a kilo of material on a 250 g spool.
+        self.assertAlmostEqual(price_per_gram(FakeSpool()), 0.025)
+
+    def test_every_missing_number_means_no_price(self):
+        for field in ("purchase_price", "initial_total_weight_g", "empty_spool_weight_g"):
+            with self.subTest(missing=field):
+                self.assertIsNone(price_per_gram(FakeSpool(**{field: None})))
+
+    def test_a_spool_that_weighs_less_than_its_core(self):
+        # Nonsense in, nothing out. Dividing by zero or by a negative net weight
+        # would put an absurd price on every gram of a print.
+        self.assertIsNone(price_per_gram(FakeSpool(initial_total_weight_g=200.0)))
+        self.assertIsNone(price_per_gram(FakeSpool(initial_total_weight_g=250.0)))
+
+    def test_a_free_spool_is_still_a_price(self):
+        # Zero is a number, not a missing one.
+        self.assertEqual(price_per_gram(FakeSpool(purchase_price=0.0)), 0.0)
 
 
 if __name__ == "__main__":
