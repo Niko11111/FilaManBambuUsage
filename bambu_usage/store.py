@@ -428,6 +428,24 @@ async def override_filament_amount(
     )
 
 
+async def delete_print(db: AsyncSession, print_id: int) -> bool:
+    """Remove one print and its filament rows, returning whether it existed.
+
+    The rows go first and explicitly, the same way purge_expired_history does
+    it: the declared cascade only fires where the database enforces foreign
+    keys, and an orphaned filament row is invisible in the interface, which is
+    the worst kind of leak.
+
+    What was booked in FilaMan stays booked. The filament was really used, and
+    no spool may refill itself because somebody tidied up a list.
+    """
+    await db.execute(delete(filament_table).where(filament_table.c.print_id == print_id))
+    result = await db.execute(delete(prints_table).where(prints_table.c.id == print_id))
+    await db.commit()
+
+    return bool(result.rowcount)
+
+
 async def read_thumbnail(db: AsyncSession, print_id: int) -> tuple[bytes, str] | None:
     """The stored plate preview of one print, with its mime type."""
     result = await db.execute(

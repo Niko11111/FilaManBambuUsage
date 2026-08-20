@@ -61,7 +61,12 @@
     "orderNewest": "Neueste zuerst",
     "orderOldest": "Älteste zuerst",
     "orderLargest": "Längste zuerst",
-    "noMatch": "Kein Druck passt zu diesem Filter"
+    "noMatch": "Kein Druck passt zu diesem Filter",
+    "delete": "Diesen Druck löschen",
+    "deleteHeading": "Diesen Druck löschen?",
+    "deleteExplain": "Es verschwindet nur der Eintrag aus dieser Liste. Was gebucht wurde, bleibt auf der Spule gebucht, denn das Filament wurde wirklich verbraucht.",
+    "deleteConfirm": "Löschen",
+    "cancel": "Abbrechen"
   },
   "printType": {
     "cloud": "Cloud-Druck",

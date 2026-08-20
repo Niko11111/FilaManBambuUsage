@@ -394,6 +394,27 @@ async def correct_usage(
 
 
 @admin_router.post(
+    "/print/{print_id}/delete",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[RequirePermission(CONSUMPTION_PERMISSION), Depends(ensure_ready)],
+)
+async def delete_print(print_id: int, db: DBSession) -> None:
+    """Remove one print from the history. What was booked stays booked.
+
+    POST rather than DELETE, like every other write here, because that is the
+    path proven against FilaMan's CSRF protection. A second method would buy
+    nothing but a new way to be rejected.
+    """
+    try:
+        await service.forget_print(db, print_id)
+    except service.UsageError as exc:
+        raise _booking_failed(exc) from exc
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        raise _database_unavailable(exc) from exc
+
+
+@admin_router.post(
     "/print/{print_id}/spend",
     response_model=dict[int, float],
     dependencies=[RequirePermission(CONSUMPTION_PERMISSION), Depends(ensure_ready)],

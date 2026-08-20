@@ -117,6 +117,11 @@ turned into a deduction, so material is only ever taken away. Giving some back
 is `record_adjustment(spool, "relative", delta_weight_g=...)`, where a positive
 delta raises the remaining weight.
 
+Deleting a print never touches a spool. `store.delete_print` removes the print
+and its filament rows and nothing else, the same way `purge_expired_history`
+does it for the retention: rows first and explicitly, because the declared
+cascade only fires where the database enforces foreign keys.
+
 The same pair moves a booking from one spool to another, which is what happens
 when a spool is corrected after the print was already booked: the new one is
 charged and the old one credited, both with a note saying where it went. The

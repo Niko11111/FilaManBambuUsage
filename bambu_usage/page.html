@@ -466,6 +466,15 @@
     .print-meta span, .badge { display: inline-flex; align-items: center; gap: 6px; }
     .icon-button .icon { width: 1.1em; height: 1.1em; }
 
+    .icon-button.danger:hover { color: var(--error-text); border-color: var(--error-text); }
+    .confirm { max-width: 46ch; }
+    .confirm-explain { color: var(--text-muted); font-size: 0.86rem; margin: 10px 0 16px; }
+    .danger-button {
+      color: var(--text);
+      background: color-mix(in srgb, var(--error-text) 22%, transparent);
+      border-color: var(--error-text);
+    }
+
     .filters {
       display: flex;
       align-items: center;
@@ -1276,6 +1285,9 @@
 
         // Not while it runs: booking now would charge the full estimate for
         // material still on the spool. The end books it by itself.
+        // Never on a running print: it has not finished being what it is.
+        if (!isRunning) badges.appendChild(deleteButton(record));
+
         if (!isRunning && !record.spent && bookable(record)) {
           var book = el('button', 'button ghost', t('history.book'));
           book.type = 'button';
@@ -1298,6 +1310,41 @@
           total = (total || 0) + usage.used_so_far;
         });
         return total;
+      }
+
+      function deleteButton(record) {
+        var button = withIcon(el('button', 'icon-button danger'), 'trash');
+        button.type = 'button';
+        button.title = t('history.delete');
+        button.setAttribute('aria-label', t('history.delete'));
+        button.addEventListener('click', function () { askToDelete(record); });
+        return button;
+      }
+
+      function askToDelete(record) {
+        // Asked in our own window rather than through confirm(): a browser
+        // dialog cannot be translated and blocks everything behind it.
+        var box = el('div', 'confirm');
+        box.appendChild(el('div', 'picker-title', t('history.deleteHeading')));
+        box.appendChild(el('p', 'picker-detail', record.file_name));
+        box.appendChild(el('p', 'confirm-explain', t('history.deleteExplain')));
+
+        var actions = el('div', 'row-actions');
+        var go = el('button', 'button danger-button', t('history.deleteConfirm'));
+        go.type = 'button';
+        go.addEventListener('click', function () {
+          closeOverlay();
+          act(go, write(ADMIN + '/print/' + record.id + '/delete', {}));
+        });
+        actions.appendChild(go);
+
+        var never = el('button', 'button ghost', t('history.cancel'));
+        never.type = 'button';
+        never.addEventListener('click', closeOverlay);
+        actions.appendChild(never);
+
+        box.appendChild(actions);
+        openOverlay(box);
       }
 
       function printFacts(record) {

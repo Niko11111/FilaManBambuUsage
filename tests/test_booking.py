@@ -569,6 +569,29 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(untouched.spent_grams, 30.0)
         self.assertEqual(self.adjustments, [])
 
+    async def test_deleting_a_print_takes_its_filament_rows_with_it(self):
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            await service.finish_print(db, print_id, models.STATUS_FINISHED, AUTO, NOW)
+
+            await service.forget_print(db, print_id)
+
+            self.assertIsNone(await store.get_print(db, print_id))
+            self.assertEqual(await store.list_filaments(db, print_id), [])
+
+        # The material was really used, so it stays booked. Tidying a list is
+        # not a reason for a spool to refill itself.
+        self.assertEqual(sorted(self.consumptions), [(7, 41.2, "cube.3mf"), (8, 12.5, "cube.3mf")])
+        self.assertEqual(self.adjustments, [])
+
+    async def test_deleting_a_print_that_is_not_there_says_so(self):
+        async with self.sessions() as db:
+            with self.assertRaises(service.UsageError):
+                await service.forget_print(db, 999)
+
     async def test_the_history_carries_the_breakdown(self):
         self.slots = {"0-0": 7, "0-1": 8}
         self.have_spools(7, 8)

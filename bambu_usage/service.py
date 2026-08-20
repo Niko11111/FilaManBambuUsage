@@ -331,6 +331,19 @@ async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
     return booked
 
 
+async def forget_print(db: AsyncSession, print_id: int) -> None:
+    """Take one print out of the history, with its filament rows.
+
+    Deliberately not a rollback: what was booked stays booked, because the
+    material was really used. Deleting a record is about the list, not about the
+    spool, and mixing the two would let a spool refill itself through tidying.
+    """
+    from . import store
+
+    if not await store.delete_print(db, print_id):
+        raise UsageError(f"print {print_id} does not exist")
+
+
 async def _rebook_stopped_rows(
     db: AsyncSession,
     record: Any,

@@ -332,6 +332,12 @@ nozzle. Each carries a small monochrome icon. They live inline in `page.html` as
 them draws in `currentColor` so it takes the colour of whatever it sits next
 to, in all three themes.
 
+A print can also be taken out of the list, which asks first, in our own window
+rather than through `confirm()`, because a browser dialog cannot be translated.
+**What was booked stays booked.** The filament was really used, and letting a
+spool refill itself through tidying up would make the history the enemy of the
+stock. The dialog says so rather than leaving it to be discovered.
+
 Above the list sits a search by file name, a switch that leaves the failed ones
 out, and a sort order. All three are answered by the query in `store.list_prints`
 rather than by the page, because a filter that only searches the four records
