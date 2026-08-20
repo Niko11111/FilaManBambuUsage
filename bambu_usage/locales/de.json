@@ -44,7 +44,8 @@
     "correct": "Korrigieren",
     "corrected": "von Hand korrigiert",
     "stoppedAt": "bei {percent}% abgebrochen",
-    "notBooked": "nicht gebucht"
+    "notBooked": "nicht gebucht",
+    "bookingFailed": "Buchung fehlgeschlagen"
   },
   "picker": {
     "heading": "Spule zuordnen",

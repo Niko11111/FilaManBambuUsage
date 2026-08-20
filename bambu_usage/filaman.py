@@ -237,13 +237,20 @@ def _slot_index_of(slot: Any) -> str | None:
 
 
 async def load_spool(db: AsyncSession, spool_id: int) -> Any | None:
-    """Load one spool. Returns None when it no longer exists.
+    """Load one spool through FilaMan's own loader.
+
+    **Not db.get().** ``SpoolService.record_consumption`` reaches for
+    ``spool.status`` on its way, and a relationship that was never loaded is
+    fetched lazily, which an async session answers with MissingGreenlet rather
+    than with data. ``SpoolService.get_spool`` eagerly loads exactly what its own
+    code goes on to touch, which is the whole reason to call FilaMan's entry
+    points instead of assembling queries of our own.
 
     History outlives the spool it refers to, which is why a missing spool is an
     expected answer rather than a failure.
     """
-    (Spool,) = _import_names("app.models.spool", "Spool")
-    return await db.get(Spool, spool_id)
+    (SpoolService,) = _import_names("app.services.spool_service", "SpoolService")
+    return await SpoolService(db).get_spool(spool_id)
 
 
 async def record_consumption(

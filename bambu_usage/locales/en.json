@@ -44,7 +44,8 @@
     "correct": "Correct",
     "corrected": "corrected by hand",
     "stoppedAt": "stopped at {percent}%",
-    "notBooked": "not booked"
+    "notBooked": "not booked",
+    "bookingFailed": "Booking failed"
   },
   "picker": {
     "heading": "Assign a spool",

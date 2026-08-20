@@ -29,6 +29,7 @@ from bambu_usage.threemf import FilamentInfo, PrintMetadata
 from ._support import HAS_TEST_DEPENDENCIES
 
 if HAS_TEST_DEPENDENCIES:
+    from sqlalchemy.exc import InvalidRequestError
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlalchemy.pool import StaticPool
 
@@ -61,6 +62,9 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
         self.adjustments: list[tuple[int, float]] = []
         # spool id -> price of one gram, empty unless a test says otherwise.
         self.prices: dict[int, float] = {}
+        # Spools whose booking refuses, to exercise the path that skips one and
+        # carries on with the rest.
+        self.refuse: set[int] = set()
 
         for name, replacement in (
             ("resolve_spool_for_slot", self.fake_resolve_spool),
@@ -80,6 +84,11 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
         return self.spools.get(spool_id)
 
     async def fake_record_consumption(self, db, spool, grams, event_at, note=None):
+        if spool.id in self.refuse:
+            # What a lazily loaded relationship answers with in an async session,
+            # and the class of error the booking loop is built to survive.
+            raise InvalidRequestError("greenlet_spawn has not been called")
+
         self.consumptions.append((spool.id, round(grams, 3), note))
         await db.commit()
 
@@ -545,6 +554,44 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
             booked = (await store.list_filaments(db, print_id))[0]
             self.assertFalse(await service.split_filament_row(db, booked.id, 0.4, 9))
             self.assertEqual(len(await store.list_filaments(db, print_id)), 2)
+
+    async def test_a_refused_booking_lands_where_it_can_be_seen(self):
+        # It used to live in the container log and nowhere else, which cost an
+        # afternoon of guessing.
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+        self.refuse = {7}
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            with self.assertLogs("bambu_usage.service", level="ERROR"):
+                await service.finish_print(db, print_id, models.STATUS_FINISHED, AUTO, NOW)
+
+            record = await store.get_print(db, print_id)
+
+        self.assertIn("spool 7", record.error)
+        self.assertFalse(record.spent)
+        # The other spool went through regardless, which is the point of
+        # surviving one failure.
+        self.assertEqual(self.consumptions, [(8, 12.5, "cube.3mf")])
+
+    async def test_a_booking_that_works_clears_the_old_warning(self):
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+        self.refuse = {7}
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            with self.assertLogs("bambu_usage.service", level="ERROR"):
+                await service.finish_print(db, print_id, models.STATUS_FINISHED, AUTO, NOW)
+
+            self.refuse = set()
+            await service.spend_print(db, print_id)
+
+            record = await store.get_print(db, print_id)
+
+        self.assertIsNone(record.error)
+        self.assertTrue(record.spent)
 
     async def test_booking_a_print_that_does_not_exist(self):
         async with self.sessions() as db:

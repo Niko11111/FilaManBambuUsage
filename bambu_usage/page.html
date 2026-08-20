@@ -209,6 +209,12 @@
     .filament-scroll { overflow-x: auto; }
 
     .print-title { font-weight: 600; word-break: break-all; }
+    .print-problem {
+      color: var(--error-text);
+      font-size: 0.85rem;
+      margin-bottom: 8px;
+      word-break: break-word;
+    }
     .print-meta {
       color: var(--text-muted);
       font-size: 0.85rem;
@@ -955,6 +961,13 @@
         }
 
         body.appendChild(meta);
+
+        // A booking that failed is skipped so the other spools still go
+        // through. Saying so here is what keeps that from being invisible.
+        if (record.error) {
+          body.appendChild(el('div', 'print-problem',
+            t('history.bookingFailed') + ': ' + record.error));
+        }
 
         if (isRunning) {
           // Filled by updateRunningLive on every poll, so the live figures do

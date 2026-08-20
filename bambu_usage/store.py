@@ -245,6 +245,18 @@ async def set_print_status(
     await db.execute(update(prints_table).where(prints_table.c.id == print_id).values(**values))
 
 
+async def set_print_error(db: AsyncSession, print_id: int, message: str | None) -> None:
+    """Record why a booking did not happen, or clear it when one succeeded.
+
+    A booking that fails is skipped so the other spools still go through, and
+    without this the reason would live in the container log and nowhere a user
+    can see it.
+    """
+    await db.execute(
+        update(prints_table).where(prints_table.c.id == print_id).values(error=message)
+    )
+
+
 async def set_print_spent(db: AsyncSession, print_id: int, spent: bool) -> None:
     """Record whether everything bookable on this print has been booked."""
     await db.execute(

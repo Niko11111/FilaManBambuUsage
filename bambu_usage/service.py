@@ -59,6 +59,10 @@ if TYPE_CHECKING:  # imported for annotations only, keeps the module import-ligh
 
 logger = logging.getLogger(__name__)
 
+# The error column of a print is this wide, so an explanation is cut to fit
+# rather than failing the very write that was meant to record a failure.
+MAX_ERROR_LENGTH = 500
+
 # Note written to the spool log when an amount was corrected by hand. The file
 # name of the print is the note on a normal booking, see spend_print.
 _CORRECTION_NOTE = "correction"
@@ -248,6 +252,7 @@ async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
 
     moment = record.finished_at or datetime.now(timezone.utc)
     booked: dict[int, float] = {}
+    failures: list[str] = []
 
     for spool_id, grams in totals.items():
         spool = await filaman.load_spool(db, spool_id)
@@ -255,6 +260,7 @@ async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
             logger.warning(
                 "print %s: spool %s no longer exists, %.2f g not booked", print_id, spool_id, grams
             )
+            failures.append(f"spool {spool_id} no longer exists")
             continue
 
         try:
@@ -263,13 +269,17 @@ async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
             for row in (r for r in pending if r.spool_id == spool_id):
                 await store.mark_filament_spent(db, row.id, rules.share_of(row, factor) or 0.0, moment)
             await filaman.record_consumption(db, spool, grams, moment, record.file_name)
-        except (SQLAlchemyError, filaman.FilaManUnavailableError):
+        except (SQLAlchemyError, filaman.FilaManUnavailableError) as exc:
             await db.rollback()
             logger.exception("print %s: booking %.2f g on spool %s failed", print_id, grams, spool_id)
+            failures.append(f"spool {spool_id}: {exc}")
             continue
 
         booked[spool_id] = grams
 
+    # Written whether or not anything failed, so that a retry which works clears
+    # the warning instead of leaving a stale one behind.
+    await store.set_print_error(db, print_id, _failure_note(failures))
     await _refresh_spent_flag(db, print_id)
 
     return booked
@@ -408,6 +418,18 @@ async def correct_usage(db: AsyncSession, filament_row_id: int, grams: float) ->
     await _refresh_spent_flag(db, print_id=int(row.print_id))
 
 
+
+
+def _failure_note(failures: list[str]) -> str | None:
+    """One line for the history about what did not book, or None if all did.
+
+    A booking is skipped so the other spools still go through, and without this
+    the reason would live in the container log and nowhere a user can see it.
+    """
+    if not failures:
+        return None
+
+    return "; ".join(failures)[:MAX_ERROR_LENGTH]
 
 
 async def _refresh_spent_flag(db: AsyncSession, print_id: int) -> None:
