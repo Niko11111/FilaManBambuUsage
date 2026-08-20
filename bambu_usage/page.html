@@ -1118,7 +1118,7 @@
 
         var list = el('div', 'filaments');
         record.filaments.forEach(function (usage) {
-          list.appendChild(filamentBlock(usage));
+          list.appendChild(filamentBlock(usage, isRunning));
         });
         body.appendChild(list);
 
@@ -1165,7 +1165,9 @@
           })));
         }
 
-        if (!record.spent && bookable(record)) {
+        // Not while it runs: booking now would charge the full estimate for
+        // material still on the spool. The end books it by itself.
+        if (!isRunning && !record.spent && bookable(record)) {
           var book = el('button', 'button ghost', t('history.book'));
           book.type = 'button';
           book.addEventListener('click', function () {
@@ -1262,7 +1264,7 @@
         });
       }
 
-      function filamentBlock(usage) {
+      function filamentBlock(usage, isRunning) {
         var assigned = usage.spool_id !== null && usage.spool_id !== undefined;
         var block = el('div', assigned ? 'filament' : 'filament needs-spool');
 
@@ -1287,7 +1289,7 @@
         edit.type = 'button';
         edit.title = t('history.edit');
         edit.setAttribute('aria-label', t('history.edit'));
-        edit.addEventListener('click', function () { openFilamentEditor(usage); });
+        edit.addEventListener('click', function () { openFilamentEditor(usage, isRunning); });
         block.appendChild(edit);
 
         return block;
@@ -1331,7 +1333,7 @@
         return value === null || value === undefined ? fallback : value;
       }
 
-      function openFilamentEditor(usage) {
+      function openFilamentEditor(usage, isRunning) {
         // Everything that can be changed about one filament lives in this one
         // window, so the card itself stays readable. The spool question needs
         // colour, remaining weight and a way to narrow a few hundred entries,
@@ -1340,14 +1342,18 @@
           material: usage.material || '',
           query: '',
           order: 'match',
-          bookNow: true
+          // Off while the print runs, and not offered either: what it has laid
+          // down so far is not what it will have used at the end.
+          bookNow: !isRunning,
+          running: Boolean(isRunning)
         };
 
         var box = el('div', 'picker');
         box.appendChild(pickerHead(usage));
 
-        // Nothing to correct before a spool has answered for the filament.
-        if (usage.spool_id !== null && usage.spool_id !== undefined) {
+        // Nothing to correct before a spool has answered for the filament, and
+        // nothing to correct towards while the print is still adding to it.
+        if (!state.running && usage.spool_id !== null && usage.spool_id !== undefined) {
           box.appendChild(amountSection(usage));
         }
         box.appendChild(spoolSection(usage, state));
@@ -1474,9 +1480,10 @@
         });
         tools.appendChild(order);
 
-        // Only a question while nothing is booked yet. Moving an existing
-        // booking happens either way, so offering the choice would lie.
-        if (!usage.spent_at) {
+        // Only a question while nothing is booked yet and the print has ended.
+        // Moving an existing booking happens either way, so offering the choice
+        // would lie, and a running print is never booked by hand.
+        if (!usage.spent_at && !state.running) {
           var bookLabel = el('label', 'check');
           var bookNow = el('input');
           bookNow.type = 'checkbox';

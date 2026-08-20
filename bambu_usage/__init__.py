@@ -14,7 +14,7 @@ See docs/01_Design.md in the repository for the full design.
 
 import logging
 
-__version__ = "0.6.3"
+__version__ = "0.6.4"
 
 _logger = logging.getLogger(__name__)
 

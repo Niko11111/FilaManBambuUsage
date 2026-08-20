@@ -233,6 +233,21 @@ progress leaves the row open for a correction rather than getting a made up
 number, because an invented amount on a spool cannot be told apart from a real
 one afterwards.
 
+**A running print is never booked, by anybody.** Not automatically, not through
+the button on the card, and not through assigning a spool by hand. It has laid
+down a share whose end nobody knows yet, so charging the full estimate would put
+material on the bill that is still on the spool. `spend_print` and
+`correct_usage` both refuse while the status is `running`, because the answer
+must not depend on which of the two asked.
+
+That leaves one case the booking loop cannot see: a row booked while the print
+was still running, through an older version or a direct API call, on a print
+that is then cancelled. The loop only picks up rows without a `spent_at`, so
+that row would keep the full estimate forever. `_rebook_stopped_rows` closes
+it: every already booked row is recomputed from its **estimate** times the share
+the print reached, and the difference is given back. A row corrected by hand is
+left alone, because a number a person entered is not for a machine to overrule.
+
 The same curve answers a second question while the print is still running: what
 it has used **so far**. The page shows it per filament and as a total, computed
 with the arithmetic the booking would use, so the figure grows towards exactly

@@ -50,7 +50,7 @@ from typing import TYPE_CHECKING, Any
 from . import rules
 
 if TYPE_CHECKING:  # imported for annotations only, keeps the module import-light
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,6 +66,13 @@ MAX_ERROR_LENGTH = 500
 # Note written to the spool log when an amount was corrected by hand. The file
 # name of the print is the note on a normal booking, see spend_print.
 _CORRECTION_NOTE = "correction"
+
+# And when a print was stopped after a row had already been booked.
+_STOPPED_NOTE = "corrected to the share the print reached"
+
+# Below this the correction is not worth a line in the spool log. A tenth of a
+# hundredth of a gram is rounding, not consumption.
+REBOOK_THRESHOLD_G = 0.01
 
 
 class UsageError(RuntimeError):
@@ -242,11 +249,18 @@ async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
     from sqlalchemy.exc import SQLAlchemyError
 
     from . import filaman, store
-    from .models import STOPPED_STATUSES
+    from .models import STATUS_RUNNING, STOPPED_STATUSES
 
     record = await store.get_print(db, print_id)
     if record is None:
         raise UsageError(f"print {print_id} does not exist")
+
+    # A print that is neither finished nor stopped has laid down some share
+    # nobody knows the end of yet. Booking it would charge the full estimate for
+    # material still on the spool, so the answer is no matter who asks: the
+    # automatic booking at the end is the only one that knows what was used.
+    if record.status == STATUS_RUNNING:
+        raise UsageError(f"print {print_id} is still running, it is booked when it ends")
 
     was_stopped = record.status in STOPPED_STATUSES
     linear = rules.booking_factor(
@@ -303,12 +317,75 @@ async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
 
         booked[spool_id] = grams
 
+    if was_stopped:
+        await _rebook_stopped_rows(db, record, rows, pending, share_for, moment, failures)
+
     # Written whether or not anything failed, so that a retry which works clears
     # the warning instead of leaving a stale one behind.
     await store.set_print_error(db, print_id, _failure_note(failures))
     await _refresh_spent_flag(db, print_id)
 
     return booked
+
+
+async def _rebook_stopped_rows(
+    db: AsyncSession,
+    record: Any,
+    rows: list[Any],
+    pending: list[Any],
+    share_for: Callable[[Any], float],
+    moment: datetime,
+    failures: list[str],
+) -> None:
+    """Bring rows booked before the print stopped back to what was really used.
+
+    A row can be booked while the print is still running, through a spool
+    assigned by hand. If the print is then cancelled, the loop above never looks
+    at that row again, because it only picks up what has no ``spent_at``, and
+    the spool would keep the full estimate for material that was never laid
+    down. This is the second half of that story.
+
+    Two rows are left alone. One booked a moment ago in this very call, which
+    already carries the right share. And one somebody corrected by hand, because
+    a number a person entered is not for a machine to overrule.
+    """
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from . import filaman, store
+
+    just_booked = {int(row.id) for row in pending}
+
+    for row in rows:
+        if int(row.id) in just_booked or row.spent_at is None or row.spool_id is None:
+            continue
+        if row.manual_override or row.estimated_grams is None or row.spent_grams is None:
+            continue
+
+        # The estimate is the base, never the booked amount: scaling what was
+        # already scaled would take the share off a second time.
+        target = float(row.estimated_grams) * share_for(row)
+        difference = target - float(row.spent_grams)
+        if abs(difference) < REBOOK_THRESHOLD_G:
+            continue
+
+        spool = await filaman.load_spool(db, int(row.spool_id))
+        if spool is None:
+            logger.warning(
+                "print %s: spool %s no longer exists, %.2f g not given back",
+                record.id, row.spool_id, -difference,
+            )
+            failures.append(f"spool {row.spool_id} no longer exists")
+            continue
+
+        try:
+            await store.mark_filament_spent(db, int(row.id), target, moment)
+            await _move_difference(db, spool, difference, moment, _STOPPED_NOTE)
+        except (SQLAlchemyError, filaman.FilaManUnavailableError) as exc:
+            await db.rollback()
+            logger.exception(
+                "print %s: correcting spool %s by %.2f g failed", record.id, row.spool_id, difference
+            )
+            failures.append(f"spool {row.spool_id}: {exc}")
 
 
 async def split_filament_row(
@@ -388,7 +465,9 @@ async def assign_spool(
 
     The path for local prints in stage 1, and for anything the automatic
     resolution left open. With *spend_now* the print is booked afterwards, which
-    picks up this row along with any other that is still open.
+    picks up this row along with any other that is still open. On a print that
+    is still running the assignment stands and the booking is refused, see
+    spend_print.
 
     A row that was already booked is **moved** rather than relabelled: see
     _move_booking. Assigning the spool it already has does nothing at all.
@@ -473,14 +552,23 @@ async def correct_usage(db: AsyncSession, filament_row_id: int, grams: float) ->
 
     ``estimated_grams`` stays untouched, so the slicer's number remains
     comparable against the scale.
+
+    Refused while the print is still running, for the same reason spend_print
+    refuses: the difference is moved on the spool right away, and there is no
+    final amount to correct towards yet.
     """
     from . import filaman, store
+    from .models import STATUS_RUNNING
 
     row = await store.get_filament(db, filament_row_id)
     if row is None:
         raise UsageError(f"filament row {filament_row_id} does not exist")
     if row.spool_id is None:
         raise UsageError(f"filament row {filament_row_id} has no spool to correct")
+
+    record = await store.get_print(db, int(row.print_id))
+    if record is not None and record.status == STATUS_RUNNING:
+        raise UsageError(f"print {row.print_id} is still running, there is nothing to correct yet")
 
     spool = await filaman.load_spool(db, int(row.spool_id))
     if spool is None:
@@ -490,15 +578,32 @@ async def correct_usage(db: AsyncSession, filament_row_id: int, grams: float) ->
     difference = grams - (row.spent_grams or 0.0)
 
     await store.override_filament_amount(db, filament_row_id, grams, moment)
+    await _move_difference(db, spool, difference, moment, _CORRECTION_NOTE)
+    await _refresh_spent_flag(db, print_id=int(row.print_id))
+
+
+async def _move_difference(
+    db: AsyncSession,
+    spool: Any,
+    difference: float,
+    moment: datetime,
+    note: str,
+) -> None:
+    """Move *difference* grams on a spool, in whichever direction it points.
+
+    ``record_consumption`` turns every positive value into a deduction and can
+    therefore never give anything back; that is what ``record_adjustment`` is
+    for. Both commit the session, which is why the case of no difference at all
+    has to commit as well.
+    """
+    from . import filaman
 
     if difference > 0:
-        await filaman.record_consumption(db, spool, difference, moment, _CORRECTION_NOTE)
+        await filaman.record_consumption(db, spool, difference, moment, note)
     elif difference < 0:
-        await filaman.record_adjustment(db, spool, -difference, moment, _CORRECTION_NOTE)
+        await filaman.record_adjustment(db, spool, -difference, moment, note)
     else:
         await db.commit()
-
-    await _refresh_spent_flag(db, print_id=int(row.print_id))
 
 
 

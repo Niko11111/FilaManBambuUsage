@@ -466,6 +466,93 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
             # The print stays open, because one row is still waiting.
             self.assertFalse((await store.get_print(db, print_id)).spent)
 
+    async def test_a_running_print_is_not_booked(self):
+        # It has laid down some share nobody knows the end of yet. Booking it
+        # would charge the full estimate for material still on the spool.
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+
+            with self.assertRaises(service.UsageError):
+                await service.spend_print(db, print_id)
+
+        self.assertEqual(self.consumptions, [])
+
+    async def test_a_running_print_cannot_be_corrected_either(self):
+        self.slots = {"0-0": 7}
+        self.have_spools(7)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            row = (await store.list_filaments(db, print_id))[0]
+
+            with self.assertRaises(service.UsageError):
+                await service.correct_usage(db, row.id, 12.0)
+
+        self.assertEqual(self.consumptions, [])
+        self.assertEqual(self.adjustments, [])
+
+    async def test_an_abort_gives_back_what_was_booked_too_early(self):
+        # A spool assigned by hand mid print books the full estimate. When the
+        # print is then cancelled, that row is the one nobody would look at
+        # again, and the spool would keep material it never laid down.
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        metadata = self.two_filaments()
+        metadata.layer_shares = {1: [0.5, 0.8, 1.0], 2: [0.0, 0.0, 1.0]}
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1], metadata=metadata)
+            row = (await store.list_filaments(db, print_id))[0]
+
+            # What an early booking leaves behind: the full estimate, spent.
+            await store.mark_filament_spent(db, row.id, 41.2, NOW)
+            await db.commit()
+
+            await service.finish_print(
+                db, print_id, models.STATUS_CANCELLED, AUTO_WITH_CANCEL, NOW,
+                completed_fraction=0.66, stopped_at_layer=2,
+            )
+
+            corrected = await store.get_filament(db, row.id)
+
+        # 80 per cent of 41.2 is what layer two had used, so 20 per cent comes
+        # back. The other row books normally, at zero, because its filament is
+        # only laid down in the last layer.
+        self.assertAlmostEqual(corrected.spent_grams, 41.2 * 0.8)
+        self.assertEqual(len(self.adjustments), 1)
+        self.assertEqual(self.adjustments[0][0], 7)
+        self.assertAlmostEqual(self.adjustments[0][1], 41.2 * 0.2)
+
+    async def test_an_abort_leaves_a_hand_corrected_row_alone(self):
+        # Somebody weighed it. No recomputation overrules that.
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        metadata = self.two_filaments()
+        metadata.layer_shares = {1: [0.5, 0.8, 1.0], 2: [0.0, 0.0, 1.0]}
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1], metadata=metadata)
+            row = (await store.list_filaments(db, print_id))[0]
+            await store.override_filament_amount(db, row.id, 30.0, NOW)
+            await db.commit()
+            self.adjustments.clear()
+            self.consumptions.clear()
+
+            await service.finish_print(
+                db, print_id, models.STATUS_CANCELLED, AUTO_WITH_CANCEL, NOW,
+                completed_fraction=0.66, stopped_at_layer=2,
+            )
+
+            untouched = await store.get_filament(db, row.id)
+
+        self.assertEqual(untouched.spent_grams, 30.0)
+        self.assertEqual(self.adjustments, [])
+
     async def test_the_history_carries_the_breakdown(self):
         self.slots = {"0-0": 7, "0-1": 8}
         self.have_spools(7, 8)
