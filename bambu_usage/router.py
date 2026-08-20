@@ -18,8 +18,8 @@ router ``on_startup`` handlers inert. The first request into this router is
 therefore the earliest moment any code of this plugin can run, which is what
 ``ensure_ready`` exists for. See docs/02_FilaMan_Plugin_API.md section 4.
 
-May import: schemas, service, settings, models, filaman. Must not import tracker
-(no printer access from an HTTP handler) or bambulabs_api. Enforced by
+May import: schemas, service, views, settings, models, filaman. Must not import
+tracker (no printer access from an HTTP handler) or bambulabs_api. Enforced by
 tools/check_architecture.py.
 
 This module and filaman.py are the only two that import FilaMan's ``app``
@@ -40,7 +40,7 @@ from app.api.deps import DBSession, RequirePermission, require_auth
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import SQLAlchemyError
 
-from . import __version__, filaman, models, schemas, service, settings
+from . import __version__, filaman, models, schemas, service, settings, views
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +192,7 @@ async def health(db: DBSession) -> schemas.HealthResponse:
     watched: list[schemas.PrinterStatus] = []
     currency: str | None = None
     with contextlib.suppress(SQLAlchemyError, filaman.FilaManUnavailableError):
-        watched = await service.get_printer_status(db)
+        watched = await views.get_printer_status(db)
         currency = await filaman.load_currency(db)
 
     return schemas.HealthResponse(
@@ -294,7 +294,7 @@ async def put_settings(
 async def printer_status(db: DBSession) -> list[schemas.PrinterStatus]:
     """Live state of every listener, as they last recorded it."""
     try:
-        return await service.get_printer_status(db)
+        return await views.get_printer_status(db)
     except SQLAlchemyError as exc:
         raise _database_unavailable(exc) from exc
 
@@ -311,7 +311,7 @@ async def history(
 ) -> list[schemas.PrintRecord]:
     """Prints, newest first, with their filament breakdown."""
     try:
-        return await service.get_history(db, limit=limit, offset=offset)
+        return await views.get_history(db, limit=limit, offset=offset)
     except SQLAlchemyError as exc:
         raise _database_unavailable(exc) from exc
 
@@ -327,7 +327,7 @@ async def thumbnail(print_id: int, db: DBSession) -> Response:
     See docs/01_Design.md section 8.1.
     """
     try:
-        found = await service.get_thumbnail(db, print_id)
+        found = await views.get_thumbnail(db, print_id)
     except SQLAlchemyError as exc:
         raise _database_unavailable(exc) from exc
 

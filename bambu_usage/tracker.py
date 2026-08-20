@@ -6,8 +6,8 @@ publish a print_complete event on FilaMan's event bus, this module is the single
 one that gets replaced. See docs/01_Design.md, section 4.
 
 What runs these listeners, and in which of the four worker processes, is
-supervisor.py. This module is only about one printer: what its reports mean and
-what to do about them.
+supervisor.py, and what a report actually means is report.py. This module is the
+connection and what it does about what report.py decided.
 
 **The paho callback runs in paho's thread, not in ours.** Every message is
 handed over to the tracker's own event loop with ``run_coroutine_threadsafe``,
@@ -22,15 +22,10 @@ the function that uses it, for the same reason as in service.py: the pure parts
 of this module, the ones that decide what a report means, stay testable without
 a database, without FilaMan and without a printer.
 
-May import: service, settings, store, models, threemf, filaman, bambulabs_api.
-Must not import router, supervisor or app. Enforced by
+May import: report, service, settings, store, models, threemf, filaman,
+bambulabs_api. Must not import router, supervisor or app. Enforced by
 tools/check_architecture.py.
 
-On the size of this file, past the 400 lines CLAUDE.md asks a reason for: the
-pure functions at the top have exactly one caller, ``handle_message`` below
-them, and what a report means and what the listener does about it is the one
-thing a reviewer has to read together. Putting them one import apart would make
-the file shorter and the review harder.
 """
 
 from __future__ import annotations
@@ -45,10 +40,25 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .report import (
+    STATE_FINISH,
+    TRANSITION_STARTED,
+    completed_fraction,
+    describe_job,
+    detect_transition,
+    gcode_state_of,
+    merge_report,
+    progress_of,
+)
+
 if TYPE_CHECKING:  # imported for annotations only
     from .filaman import BambuPrinter
 
 logger = logging.getLogger(__name__)
+
+
+class TrackerError(RuntimeError):
+    """A listener could not be brought up or kept alive."""
 
 # Reconnecting is paho's own job: connect_async plus loop_start retries with a
 # growing delay by itself, and one unreachable printer therefore never stalls
@@ -64,195 +74,6 @@ MAX_ERROR_LENGTH = 500
 ASSIGNMENT_CHECK_INTERVAL_SECONDS = 30
 
 # gcode_state values that matter. PREPARE -> RUNNING marks a local print start.
-STATE_IDLE = "IDLE"
-STATE_PREPARE = "PREPARE"
-STATE_RUNNING = "RUNNING"
-STATE_PAUSE = "PAUSE"
-STATE_FINISH = "FINISH"
-STATE_FAILED = "FAILED"
-
-# A print is under way in these, and over in those.
-ACTIVE_STATES = frozenset({STATE_PREPARE, STATE_RUNNING, STATE_PAUSE})
-FINAL_STATES = frozenset({STATE_FINISH, STATE_FAILED})
-
-# A network or cloud print announces itself with this command and carries a
-# ready-made ams_mapping. Local prints do not, which is why they are stage 3.
-COMMAND_PROJECT_FILE = "project_file"
-
-PRINT_TYPE_CLOUD = "cloud"
-PRINT_TYPE_LOCAL = "local"
-
-TRANSITION_STARTED = "started"
-TRANSITION_ENDED = "ended"
-
-# Where a report keeps the fields this plugin reads.
-PRINT_SECTION = "print"
-
-
-class TrackerError(RuntimeError):
-    """A listener could not be brought up or kept alive."""
-
-
-@dataclass(frozen=True)
-class Transition:
-    """What changed between two reports, as far as this plugin cares."""
-
-    kind: str
-    gcode_state: str | None = None
-
-
-@dataclass(frozen=True)
-class PrintJob:
-    """What a report says about the job that is starting.
-
-    Built at the boundary so no raw report dict travels deeper. See
-    docs/03_Bambu_Data_Sources.md for where each field comes from.
-    """
-
-    subtask_id: str | None
-    file_name: str
-    print_type: str
-    ams_mapping: list[Any]
-    url: str | None
-    remote_path: str | None
-
-
-def merge_report(previous: dict, update: dict) -> dict:
-    """Merge one report into the state carried so far.
-
-    The printer sends partial updates: a message with only ``gcode_state`` in it
-    does not mean everything else is gone. Merging one level deep is what the
-    protocol implies, and it matches what bambulabs_api does internally.
-
-    Returns a new dict rather than mutating, because detecting a transition
-    means comparing the state before against the state after.
-    """
-    merged = dict(previous)
-
-    for key, value in update.items():
-        current = merged.get(key)
-        if isinstance(value, dict) and isinstance(current, dict):
-            merged[key] = {**current, **value}
-        else:
-            merged[key] = value
-
-    return merged
-
-
-def gcode_state_of(state: dict) -> str | None:
-    """The printer's own state name, or None if it never reported one."""
-    value = state.get(PRINT_SECTION, {}).get("gcode_state")
-    return str(value) if value is not None else None
-
-
-def subtask_of(state: dict) -> str | None:
-    """The job identifier, or None if the printer reports none."""
-    value = state.get(PRINT_SECTION, {}).get("subtask_id")
-    return str(value) if value not in (None, "") else None
-
-
-def detect_transition(previous: dict, current: dict) -> Transition | None:
-    """Decide whether a print just started or just ended.
-
-    Two signals, and the second one matters more than it looks: a printer can go
-    from one job straight into the next without ever leaving RUNNING, and only
-    the changed subtask id gives that away.
-
-    A first report that already shows an active state is a start as well. That
-    is the plugin attaching in the middle of a print, and the caller is the one
-    that decides such a print can never be booked.
-    """
-    before = gcode_state_of(previous)
-    after = gcode_state_of(current)
-
-    if after in ACTIVE_STATES and before not in ACTIVE_STATES:
-        return Transition(TRANSITION_STARTED)
-
-    if after in ACTIVE_STATES and subtask_of(previous) != subtask_of(current):
-        return Transition(TRANSITION_STARTED)
-
-    if after in FINAL_STATES and before in ACTIVE_STATES:
-        return Transition(TRANSITION_ENDED, gcode_state=after)
-
-    return None
-
-
-def describe_job(state: dict) -> PrintJob:
-    """Read out of a merged report what is needed to record the print.
-
-    Nothing here is trusted to exist. A firmware update may drop a field, and a
-    print with a missing file name still belongs in the history.
-    """
-    section = state.get(PRINT_SECTION, {})
-
-    url = section.get("url") or None
-    remote_path = section.get("gcode_file") or None
-
-    name = section.get("subtask_name") or (Path(remote_path).name if remote_path else None)
-
-    reported_type = section.get("print_type")
-    if reported_type:
-        print_type = str(reported_type)
-    else:
-        print_type = PRINT_TYPE_CLOUD if url else PRINT_TYPE_LOCAL
-
-    mapping = section.get("ams_mapping")
-    if not isinstance(mapping, list):
-        mapping = []
-
-    return PrintJob(
-        subtask_id=subtask_of(state),
-        file_name=str(name) if name else "unknown",
-        print_type=print_type,
-        ams_mapping=mapping,
-        url=str(url) if url else None,
-        remote_path=str(remote_path) if remote_path else None,
-    )
-
-
-def progress_of(state: dict) -> int | None:
-    """Percent complete, for the status line. None when it is not a number."""
-    return _as_int(state.get(PRINT_SECTION, {}).get("mc_percent"))
-
-
-def completed_fraction(state: dict) -> float | None:
-    """How far the print got, as a share between 0 and 1, or None if unknown.
-
-    Layers come first, because a layer is a better proxy for material than time
-    is, and ``mc_percent`` on a Bambu is progress in time. Both are still
-    approximations: a dense bottom layer weighs more than a sparse one in the
-    middle. The exact answer needs the cumulative extrusion per layer out of the
-    plate gcode, which is a later stage; see docs/01_Design.md section 10.
-
-    None is a real answer and not a failure. A stopped print whose progress was
-    never reported is left unbooked rather than charged a made up amount.
-    """
-    section = state.get(PRINT_SECTION, {})
-
-    layer = _as_int(section.get("layer_num"))
-    total = _as_int(section.get("total_layer_num"))
-    if layer is not None and total:
-        return _clamp(layer / total)
-
-    percent = _as_int(section.get("mc_percent"))
-    if percent is not None:
-        return _clamp(percent / 100)
-
-    return None
-
-
-def _as_int(value: Any) -> int | None:
-    """Read a number a printer reported, tolerating text and nonsense."""
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _clamp(share: float) -> float:
-    """Keep a share inside 0 to 1, whatever the printer counted."""
-    return min(max(share, 0.0), 1.0)
-
 
 @dataclass
 class PrinterListener:

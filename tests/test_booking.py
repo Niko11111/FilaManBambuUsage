@@ -5,6 +5,9 @@ plugin uses in FilaMan. FilaMan itself is replaced by fakes, because everything
 this plugin reads or writes over there goes through filaman.py, which is exactly
 what that module exists for.
 
+The read side lives in views.py and is exercised from here as well, because what
+the history shows only means anything against a booking that really happened.
+
 The consumption fake commits the session, like the real SpoolService does. That
 is not decoration: the order of marking and booking in service.spend_print only
 makes sense against a service that commits, and a fake that does not would let a
@@ -20,7 +23,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest import mock
 
-from bambu_usage import filaman, service
+from bambu_usage import filaman, service, views
 from bambu_usage.threemf import FilamentInfo, PrintMetadata
 
 from ._support import HAS_TEST_DEPENDENCIES
@@ -359,7 +362,7 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
             print_id = await self.start(db, [0, 1])
             await service.finish_print(db, print_id, models.STATUS_FINISHED, AUTO, NOW)
 
-            history = await service.get_history(db)
+            history = await views.get_history(db)
 
         self.assertEqual(len(history), 1)
         record = history[0]
@@ -380,7 +383,7 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
             print_id = await self.start(db, [0, 1])
             await service.finish_print(db, print_id, models.STATUS_FINISHED, AUTO, NOW)
 
-            history = await service.get_history(db)
+            history = await views.get_history(db)
 
         # 41.2 g at 2.5 cent plus 12.5 g at 4 cent.
         self.assertAlmostEqual(history[0].cost, 41.2 * 0.025 + 12.5 * 0.04)
@@ -388,7 +391,7 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
     async def test_the_preview_is_served_from_the_database(self):
         async with self.sessions() as db:
             print_id = await self.start(db, [0, 1])
-            self.assertEqual(await service.get_thumbnail(db, print_id), (b"PNGDATA", "image/png"))
+            self.assertEqual(await views.get_thumbnail(db, print_id), (b"PNGDATA", "image/png"))
 
     async def test_a_print_joined_in_the_middle_is_never_booked(self):
         # How much of it ran before this plugin was listening is unknowable, so

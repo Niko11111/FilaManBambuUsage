@@ -1,9 +1,9 @@
 """Tests for what a printer's reports mean.
 
-These are the pure parts of tracker.py: merging the partial reports a Bambu
-printer sends, deciding whether a print started or ended, and reading a job out
-of the merged state. No MQTT, no database, no printer, and no optional
-dependency either.
+report.py is the half of the listener that decides things: merging the partial
+reports a Bambu printer sends, telling whether a print started or ended, and
+reading a job out of the merged state. No MQTT, no database, no printer, and no
+optional dependency either.
 
 The payload shapes follow docs/03_Bambu_Data_Sources.md.
 """
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import unittest
 
-from bambu_usage.tracker import (
+from bambu_usage.report import (
     PRINT_TYPE_CLOUD,
     PRINT_TYPE_LOCAL,
     STATE_FAILED,

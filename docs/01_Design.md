@@ -397,10 +397,13 @@ into the exact amount up to the layer it stopped on.
 
 | Module | Responsibility | Knows MQTT | Knows HTTP |
 |---|---|---|---|
-| `tracker.py` | one listener per printer: what a report means and what to do about it | yes | no |
+| `report.py` | what one report from a printer means, purely functional | no | no |
+| `tracker.py` | one listener per printer: the connection, and acting on what report.py decided | yes | no |
 | `supervisor.py` | which worker runs the listeners, and keeping their list current | no | no |
 | `threemf.py` | fetching and reading the 3MF, purely functional | no | no |
-| `service.py` | resolving slots, computing consumption, deducting | no | no |
+| `rules.py` | the arithmetic of consumption, purely functional | no | no |
+| `service.py` | the booking path: recording a print, resolving slots, deducting | no | no |
+| `views.py` | turning stored rows into what the page shows | no | no |
 | `filaman.py` | the only module that reads FilaMan's own models and services | no | no |
 | `store.py` | the queries on the plugin's own tables | no | no |
 | `models.py` | the plugin's tables and their lifecycle | no | no |
@@ -414,6 +417,11 @@ the price of being able to move to the event bus later without a rebuild.
 started is a question about worker processes and lock files, and what a report
 means is a question about printers. One file answering both could not be
 described in a sentence.
+
+**Three of these are pure**, and that is the point of them. `report.py`,
+`rules.py` and `threemf.py` decide things without a database, a printer or
+FilaMan, which is why they carry most of the tests and why the tests need no
+setup at all. Everything that opens a session or a socket is somewhere else.
 
 `filaman.py` exists for the same kind of reason. Every coupling to FilaMan's
 internals, listed in `02_FilaMan_Plugin_API.md` section 8, lives in that one

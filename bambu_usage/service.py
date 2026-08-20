@@ -35,10 +35,10 @@ tracker, router, app, bambulabs_api or fastapi, which is what keeps the business
 logic independent of where events come from. Enforced by
 tools/check_architecture.py.
 
-On the size of this file, past the 400 lines CLAUDE.md asks a reason for: what
-lives here is one topic, the booking path, and its hard part is the order of
-operations around a service that commits by itself. Splitting that reasoning
-across two files would hide exactly the thing a reviewer has to check.
+The arithmetic itself is in rules.py, which knows nothing about a database and is
+where the tests for it live, and reading the history back is views.py. What is
+left here is the booking path: the order of operations around a service that
+commits by itself.
 """
 
 from __future__ import annotations
@@ -47,157 +47,25 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+from . import rules
+
 if TYPE_CHECKING:  # imported for annotations only, keeps the module import-light
     from collections.abc import Iterable
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from .schemas import PluginSettings, PrinterStatus, PrintRecord
-    from .threemf import FilamentInfo, PrintMetadata
+    from .schemas import PluginSettings
+    from .threemf import PrintMetadata
 
 logger = logging.getLogger(__name__)
 
-# Bambu reserves these for the external spool holder. FilaMan stores the same
-# pair as the slot_index "255-254".
-EXTERNAL_SPOOL_AMS_ID = 255
-EXTERNAL_SPOOL_TRAY_ID = 254
-EXTERNAL_SLOT_INDEX = f"{EXTERNAL_SPOOL_AMS_ID}-{EXTERNAL_SPOOL_TRAY_ID}"
-
-# Trays are numbered globally across AMS units, four trays per unit.
-TRAYS_PER_AMS = 4
+# Note written to the spool log when an amount was corrected by hand. The file
+# name of the print is the note on a normal booking, see spend_print.
+_CORRECTION_NOTE = "correction"
 
 
 class UsageError(RuntimeError):
     """A booking was asked for that cannot be carried out."""
-
-
-def tray_to_slot_index(tray: int) -> str:
-    """Translate a global Bambu tray number into FilaMan's slot_index.
-
-    A negative tray number means the print does not use an AMS slot for this
-    filament, which is the external spool holder.
-
-    >>> tray_to_slot_index(5)
-    '1-1'
-    >>> tray_to_slot_index(0)
-    '0-0'
-    >>> tray_to_slot_index(-1)
-    '255-254'
-    """
-    if tray < 0:
-        return EXTERNAL_SLOT_INDEX
-    return f"{tray // TRAYS_PER_AMS}-{tray % TRAYS_PER_AMS}"
-
-
-def resolve_slot_indexes(
-    filaments: list[FilamentInfo],
-    ams_mapping: list[Any],
-) -> dict[int, str | None]:
-    """Map every slicer filament to the slot it printed from.
-
-    ``ams_mapping`` is indexed from zero while the slicer numbers its filaments
-    from one. Containing that off-by-one is the whole job of this function; get
-    it wrong and every spool of a multi colour print is charged to its neighbour.
-
-    A filament the mapping does not cover, or covers with something that is not
-    a tray number, resolves to None. The print then lands with an open
-    assignment instead of a guessed one.
-    """
-    resolved: dict[int, str | None] = {}
-
-    for filament in filaments:
-        index = filament.filament_id - 1
-        if index < 0 or index >= len(ams_mapping):
-            resolved[filament.filament_id] = None
-            continue
-
-        try:
-            tray = int(ams_mapping[index])
-        except (TypeError, ValueError):
-            resolved[filament.filament_id] = None
-            continue
-
-        resolved[filament.filament_id] = tray_to_slot_index(tray)
-
-    return resolved
-
-
-def sum_grams_per_spool(rows: Iterable[tuple[int | None, float | None]]) -> dict[int, float]:
-    """Total the grams per spool, so one spool produces one booking.
-
-    A print can address the same tray several times, for instance a multi colour
-    model reusing one colour. Booking each row on its own would hang several
-    events off the same spool and blur which print cost what, so the amounts are
-    summed first. See docs/04_Data_Model.md section 6.
-
-    Rows without a spool or without a usable amount are dropped: there is
-    nothing to book, and a zero gram event is noise in the spool log.
-    """
-    totals: dict[int, float] = {}
-
-    for spool_id, grams in rows:
-        if spool_id is None or grams is None or grams <= 0:
-            continue
-        totals[spool_id] = totals.get(spool_id, 0.0) + float(grams)
-
-    return totals
-
-
-def should_spend(*, finished_normally: bool, auto_spend: bool, spend_on_cancel: bool) -> bool:
-    """Whether a print that just ended is booked automatically.
-
-    Booking happens at the end and not at the start, so an aborted print does not
-    cost the full estimate. See docs/01_Design.md section 6.3.
-    """
-    if not auto_spend:
-        return False
-    if finished_normally:
-        return True
-    return spend_on_cancel
-
-
-def split_share(
-    from_fraction: float | None,
-    to_fraction: float | None,
-    at: float,
-) -> float | None:
-    """What share of a filament row belongs to the part before *at*.
-
-    A row covers a span of the print, by default the whole of it, and both ends
-    being None means exactly that. Splitting a span (a, b) at *at* leaves the
-    first part with ``(at - a) / (b - a)``.
-
-    Returns None when *at* does not fall strictly inside the span. Splitting at
-    an edge would produce an empty row, and a span that does not contain the
-    moment belongs to a part of the print that is already over.
-    """
-    start = 0.0 if from_fraction is None else float(from_fraction)
-    end = 1.0 if to_fraction is None else float(to_fraction)
-
-    if not start < at < end:
-        return None
-
-    return (at - start) / (end - start)
-
-
-def booking_factor(*, was_stopped: bool, completed_fraction: float | None) -> float:
-    """What share of the estimate a print costs.
-
-    A print that ran to the end costs all of it. One that was stopped costs the
-    share it got through, and **nothing at all** when that share is unknown: an
-    invented number on a spool is worse than an open row somebody can correct,
-    and it is exactly the mistake of booking the full estimate for an abort.
-
-    A print this plugin only saw part of is not "stopped" in this sense. It is
-    never booked automatically, and when a human books it anyway that is a
-    decision, so it costs the full estimate.
-    """
-    if not was_stopped:
-        return 1.0
-    if completed_fraction is None:
-        return 0.0
-
-    return min(max(float(completed_fraction), 0.0), 1.0)
 
 
 async def start_print(
@@ -272,7 +140,7 @@ async def _build_filament_rows(
     """Turn the 3MF filaments into table rows, resolving the spool for each."""
     from . import filaman, store
 
-    slots = resolve_slot_indexes(metadata.filaments, ams_mapping)
+    slots = rules.resolve_slot_indexes(metadata.filaments, ams_mapping)
     rows = []
 
     for filament in metadata.filaments:
@@ -336,7 +204,7 @@ async def finish_print(
     )
     await db.commit()
 
-    if not should_spend(
+    if not rules.should_spend(
         finished_normally=status == STATUS_FINISHED,
         auto_spend=settings.auto_spend,
         spend_on_cancel=settings.spend_on_cancel,
@@ -369,14 +237,14 @@ async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
     if record is None:
         raise UsageError(f"print {print_id} does not exist")
 
-    factor = booking_factor(
+    factor = rules.booking_factor(
         was_stopped=record.status in STOPPED_STATUSES,
         completed_fraction=record.completed_fraction,
     )
 
     rows = await store.list_filaments(db, print_id)
     pending = [row for row in rows if row.spool_id is not None and row.spent_at is None]
-    totals = sum_grams_per_spool((row.spool_id, _share_of(row, factor)) for row in pending)
+    totals = rules.sum_grams_per_spool((row.spool_id, rules.share_of(row, factor)) for row in pending)
 
     moment = record.finished_at or datetime.now(timezone.utc)
     booked: dict[int, float] = {}
@@ -393,7 +261,7 @@ async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
             # A row without an amount is marked at zero rather than left open,
             # otherwise its print would never count as fully booked.
             for row in (r for r in pending if r.spool_id == spool_id):
-                await store.mark_filament_spent(db, row.id, _share_of(row, factor) or 0.0, moment)
+                await store.mark_filament_spent(db, row.id, rules.share_of(row, factor) or 0.0, moment)
             await filaman.record_consumption(db, spool, grams, moment, record.file_name)
         except (SQLAlchemyError, filaman.FilaManUnavailableError):
             await db.rollback()
@@ -437,12 +305,12 @@ async def split_filament_row(
     if row.spent_at is not None:
         return False
 
-    share = split_share(row.from_fraction, row.to_fraction, at_fraction)
+    share = rules.split_share(row.from_fraction, row.to_fraction, at_fraction)
     if share is None:
         return False
 
-    kept_grams = _scaled(row.estimated_grams, share)
-    kept_length = _scaled(row.estimated_length_m, share)
+    kept_grams, rest_grams = rules.split_amounts(row.estimated_grams, share)
+    kept_length, rest_length = rules.split_amounts(row.estimated_length_m, share)
 
     await store.narrow_filament_row(
         db,
@@ -462,8 +330,8 @@ async def split_filament_row(
                 material=row.material,
                 color_hex=row.color_hex,
                 tray_info_idx=row.tray_info_idx,
-                estimated_grams=_remainder(row.estimated_grams, kept_grams),
-                estimated_length_m=_remainder(row.estimated_length_m, kept_length),
+                estimated_grams=rest_grams,
+                estimated_length_m=rest_length,
                 from_fraction=at_fraction,
                 to_fraction=row.to_fraction,
             )
@@ -540,157 +408,6 @@ async def correct_usage(db: AsyncSession, filament_row_id: int, grams: float) ->
     await _refresh_spent_flag(db, print_id=int(row.print_id))
 
 
-async def get_history(db: AsyncSession, limit: int = 50, offset: int = 0) -> list[PrintRecord]:
-    """Return prints, newest first, with their filament breakdown.
-
-    ``printer_name`` and ``spool_label`` are left empty on purpose. The page
-    already holds FilaMan's printer and spool lists for its dropdowns, so
-    resolving the names there costs nothing, while doing it here would add two
-    more couplings into FilaMan for display text alone.
-    """
-    from . import filaman, store
-    from .schemas import FilamentUsage, PrintRecord
-
-    prints = await store.list_prints(db, limit=limit, offset=offset)
-    rows = await store.list_filaments_for(db, [int(entry.id) for entry in prints])
-
-    by_print: dict[int, list[Any]] = {}
-    for row in rows:
-        by_print.setdefault(int(row.print_id), []).append(row)
-
-    prices = await filaman.load_spool_prices(
-        db, sorted({int(row.spool_id) for row in rows if row.spool_id is not None})
-    )
-
-    records = []
-    for entry in prints:
-        filaments = [
-            FilamentUsage(
-                id=int(row.id),
-                filament_id=int(row.filament_id),
-                slot_index=row.slot_index,
-                spool_id=row.spool_id,
-                material=row.material,
-                color_hex=row.color_hex,
-                estimated_grams=row.estimated_grams,
-                spent_grams=row.spent_grams,
-                spent_at=row.spent_at,
-                manual_override=bool(row.manual_override),
-                from_fraction=row.from_fraction,
-                to_fraction=row.to_fraction,
-            )
-            for row in by_print.get(int(entry.id), [])
-        ]
-        records.append(
-            PrintRecord(
-                id=int(entry.id),
-                printer_id=int(entry.printer_id),
-                file_name=entry.file_name,
-                print_type=entry.print_type,
-                started_at=entry.started_at,
-                finished_at=entry.finished_at,
-                status=entry.status,
-                spent=bool(entry.spent),
-                completed_fraction=entry.completed_fraction,
-                cost=print_cost(by_print.get(int(entry.id), []), prices),
-                has_thumbnail=entry.thumbnail_mime is not None,
-                error=entry.error,
-                filaments=filaments,
-            )
-        )
-
-    return records
-
-
-async def get_printer_status(db: AsyncSession) -> list[PrinterStatus]:
-    """Return what the listeners last wrote about themselves.
-
-    Read from the database rather than from the listeners, because they live in
-    one worker process while this is answered by any of the four. The database
-    is the only place all of them can see.
-    """
-    from . import store
-    from .schemas import PrinterStatus
-
-    return [
-        PrinterStatus(
-            printer_id=int(row.printer_id),
-            printer_name=row.printer_name or "",
-            connected=bool(row.connected),
-            tracking_enabled=bool(row.tracking_enabled),
-            current_print_id=row.current_print_id,
-            current_file_name=row.current_file_name,
-            progress_percent=row.progress_percent,
-            last_error=row.last_error,
-            updated_at=row.updated_at,
-        )
-        for row in await store.list_printer_status(db)
-    ]
-
-
-async def get_thumbnail(db: AsyncSession, print_id: int) -> tuple[bytes, str] | None:
-    """Return the stored plate preview and its mime type.
-
-    Previews cannot ship inside the plugin ZIP, which rejects image files, so
-    they are served from the database instead. See docs/01_Design.md 8.1.
-    """
-    from . import store
-
-    return await store.read_thumbnail(db, print_id)
-
-
-# Note written to the spool log when an amount was corrected by hand. The file
-# name of the print is the note on a normal booking, see spend_print.
-_CORRECTION_NOTE = "correction"
-
-
-def print_cost(rows: Iterable[Any], prices: dict[int, float]) -> float | None:
-    """What a print cost, or None when nothing behind it carries a price.
-
-    Costed on what was actually booked where there is a booking, on the estimate
-    otherwise, which is the same rule the booking itself follows. A row whose
-    spool has no price is skipped rather than counted as free: a total that
-    silently leaves parts out would look like a bargain.
-    """
-    total = None
-
-    for row in rows:
-        price = prices.get(row.spool_id)
-        amount = _amount_of(row)
-        if price is None or amount is None:
-            continue
-        total = (total or 0.0) + price * amount
-
-    return total
-
-
-def _scaled(value: float | None, share: float) -> float | None:
-    """Multiply an estimate by a share, leaving an unknown estimate unknown."""
-    return None if value is None else value * share
-
-
-def _remainder(total: float | None, kept: float | None) -> float | None:
-    """What is left of an estimate after the kept part was taken out."""
-    if total is None or kept is None:
-        return None
-    return total - kept
-
-
-def _share_of(row: Any, factor: float) -> float | None:
-    """What a row costs once the share of the print is taken into account."""
-    amount = _amount_of(row)
-    return None if amount is None else amount * factor
-
-
-def _amount_of(row: Any) -> float | None:
-    """What a filament row costs: the corrected amount if there is one.
-
-    The slicer estimate is the fallback, never the other way round, so a value
-    somebody entered by hand is not overruled by the machine.
-    """
-    if row.spent_grams is not None:
-        return float(row.spent_grams)
-    return None if row.estimated_grams is None else float(row.estimated_grams)
 
 
 async def _refresh_spent_flag(db: AsyncSession, print_id: int) -> None:

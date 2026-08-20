@@ -41,6 +41,9 @@ PLUGIN_MODULES = {
     "filaman",
     "store",
     "supervisor",
+    "rules",
+    "views",
+    "report",
 }
 
 # FilaMan's own package. Only filaman.py may reach into it, so that a FilaMan
@@ -73,6 +76,35 @@ FORBIDDEN_IMPORTS: dict[str, dict[str, str]] = {
         **{m: "the seam to FilaMan must not depend on the plugin" for m in PLUGIN_MODULES},
         "bambulabs_api": "reading FilaMan has nothing to do with reaching a printer",
         "fastapi": "the seam to FilaMan must stay callable without a web framework",
+    },
+    "report.py": {
+        **{m: "reading a report needs nothing but the report" for m in PLUGIN_MODULES},
+        "fastapi": "reading a report stays pure",
+        "sqlalchemy": "reading a report stays pure",
+        "bambulabs_api": "reading a report is not talking to a printer",
+        FILAMAN_PACKAGE: FILAMAN_PACKAGE_REASON,
+    },
+    "views.py": {
+        "tracker": "the read side must not depend on the runtime",
+        "supervisor": "the read side must not depend on the runtime",
+        "router": "the read side must not depend on the HTTP layer",
+        "service": "reading the history is not the booking path",
+        "bambulabs_api": "no printer access from the read side",
+        "fastapi": "the read side stays callable without a web framework",
+        FILAMAN_PACKAGE: FILAMAN_PACKAGE_REASON,
+    },
+    "rules.py": {
+        # threemf is missing from this list on purpose: it is pure as well, and
+        # rules names one of its dataclasses in a type annotation. Everything
+        # else would drag a database, a printer or FilaMan into arithmetic.
+        **{
+            m: "the arithmetic stays free of everything it is decided without"
+            for m in PLUGIN_MODULES - {"threemf"}
+        },
+        "fastapi": "the arithmetic stays pure",
+        "sqlalchemy": "the arithmetic stays pure",
+        "bambulabs_api": "the arithmetic stays pure",
+        FILAMAN_PACKAGE: FILAMAN_PACKAGE_REASON,
     },
     "threemf.py": {
         **{m: "threemf stays pure, so it can be tested against a file on disk" for m in PLUGIN_MODULES},

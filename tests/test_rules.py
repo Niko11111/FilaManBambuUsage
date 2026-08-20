@@ -1,7 +1,8 @@
-"""Tests for the pure helpers in service.py.
+"""Tests for the arithmetic of consumption.
 
-These run without a printer, without FilaMan and without a database, which is
-the whole point of keeping service.py free of MQTT and HTTP.
+Everything in rules.py can be decided without a printer, without FilaMan and
+without a database, which is why the module exists and why these tests need no
+setup at all.
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from bambu_usage.service import (
+from bambu_usage.rules import (
     EXTERNAL_SLOT_INDEX,
     booking_factor,
     print_cost,
