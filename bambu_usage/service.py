@@ -389,12 +389,22 @@ async def assign_spool(
     The path for local prints in stage 1, and for anything the automatic
     resolution left open. With *spend_now* the print is booked afterwards, which
     picks up this row along with any other that is still open.
+
+    A row that was already booked is **moved** rather than relabelled: see
+    _move_booking. Assigning the spool it already has does nothing at all.
     """
     from . import store
 
     row = await store.get_filament(db, filament_row_id)
     if row is None:
         raise UsageError(f"filament row {filament_row_id} does not exist")
+
+    if row.spool_id == spool_id:
+        return
+
+    if row.spent_at is not None:
+        await _move_booking(db, row, spool_id)
+        return
 
     await store.set_filament_spool(db, filament_row_id, spool_id)
     await db.commit()
@@ -404,6 +414,53 @@ async def assign_spool(
         return
 
     await _refresh_spent_flag(db, print_id=int(row.print_id))
+
+
+async def _move_booking(db: AsyncSession, row: Any, new_spool_id: int | None) -> None:
+    """Move a row that was already booked onto another spool.
+
+    Changing the spool alone would only change a label while the consumption
+    stays on the spool that never printed it. What was taken is taken again
+    where it belongs and given back where it does not, which leaves both
+    spools right and both movements readable in FilaMan's spool log.
+
+    The new spool is charged **before** the old one is credited. Should the
+    second half fail, the material is counted twice, which is visible and
+    correctable; the other order would make filament appear out of nowhere
+    and let somebody run out mid print.
+    """
+    from . import filaman, store
+
+    if new_spool_id is None:
+        raise UsageError("a booked row cannot be moved to no spool at all")
+
+    new_spool = await filaman.load_spool(db, new_spool_id)
+    if new_spool is None:
+        raise UsageError(f"spool {new_spool_id} does not exist any more")
+
+    old_spool = await filaman.load_spool(db, int(row.spool_id))
+    grams = float(row.spent_grams or 0.0)
+    moment = datetime.now(timezone.utc)
+
+    await store.set_filament_spool(db, int(row.id), new_spool_id)
+
+    if grams <= 0:
+        await db.commit()
+        return
+
+    await filaman.record_consumption(
+        db, new_spool, grams, moment, f"moved from spool {row.spool_id}"
+    )
+
+    if old_spool is None:
+        logger.warning(
+            "spool %s no longer exists, %.2f g could not be given back", row.spool_id, grams
+        )
+        return
+
+    await filaman.record_adjustment(
+        db, old_spool, grams, moment, f"moved to spool {new_spool_id}"
+    )
 
 
 async def correct_usage(db: AsyncSession, filament_row_id: int, grams: float) -> None:

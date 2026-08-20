@@ -1332,7 +1332,10 @@
         clearComplaint();
         button.disabled = true;
         promise.then(function () {
-          return Promise.all([loadSpools(), loadHistory(true)]);
+          // The spools first and the history after, never both at once:
+          // loadSpools empties the map before it refills it, and a history
+          // rendered in that moment shows bare ids where the names belong.
+          return loadSpools().then(function () { return loadHistory(true); });
         }).catch(complain).then(function () {
           button.disabled = false;
         });

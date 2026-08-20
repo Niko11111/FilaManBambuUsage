@@ -117,6 +117,12 @@ turned into a deduction, so material is only ever taken away. Giving some back
 is `record_adjustment(spool, "relative", delta_weight_g=...)`, where a positive
 delta raises the remaining weight.
 
+The same pair moves a booking from one spool to another, which is what happens
+when a spool is corrected after the print was already booked: the new one is
+charged and the old one credited, both with a note saying where it went. The
+charge goes first on purpose, so a failure in between counts material twice
+rather than conjuring it out of nowhere.
+
 **The plugin recomputes none of this.** It passes grams and a timestamp and
 relies on the service. `source="bambu_usage"` makes the origin visible in
 FilaMan's spool log and separates it from the scale and from manual entry.

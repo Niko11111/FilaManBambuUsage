@@ -318,6 +318,71 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.consumptions[-1], (9, 12.5, "cube.3mf"))
             self.assertTrue((await store.get_print(db, print_id)).spent)
 
+    async def test_moving_a_booked_row_moves_its_booking_too(self):
+        # Changing only the label would leave the consumption on a spool that
+        # never printed it, and both spools would be wrong from then on.
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8, 9)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            await service.finish_print(db, print_id, models.STATUS_FINISHED, AUTO, NOW)
+            self.assertEqual(sorted(self.consumptions), [(7, 41.2, "cube.3mf"), (8, 12.5, "cube.3mf")])
+
+            booked = (await store.list_filaments(db, print_id))[0]
+            await service.assign_spool(db, booked.id, 9)
+
+            moved = await store.get_filament(db, booked.id)
+
+        # Charged where it belongs now, given back where it does not.
+        self.assertEqual(self.consumptions[-1], (9, 41.2, "moved from spool 7"))
+        self.assertEqual(self.adjustments, [(7, 41.2)])
+        self.assertEqual(moved.spool_id, 9)
+        # What was booked does not change by moving it.
+        self.assertEqual(moved.spent_grams, 41.2)
+
+    async def test_moving_to_the_same_spool_does_nothing(self):
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            await service.finish_print(db, print_id, models.STATUS_FINISHED, AUTO, NOW)
+            booked = (await store.list_filaments(db, print_id))[0]
+
+            await service.assign_spool(db, booked.id, 7)
+
+        self.assertEqual(self.adjustments, [])
+        self.assertEqual(len(self.consumptions), 2)
+
+    async def test_an_unbooked_row_is_only_reassigned(self):
+        # Nothing has moved on any spool yet, so nothing has to move back.
+        self.slots = {"0-0": 7}
+        self.have_spools(7, 9)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            row = (await store.list_filaments(db, print_id))[0]
+
+            await service.assign_spool(db, row.id, 9, spend_now=False)
+            moved = await store.get_filament(db, row.id)
+
+        self.assertEqual(moved.spool_id, 9)
+        self.assertEqual(self.consumptions, [])
+        self.assertEqual(self.adjustments, [])
+
+    async def test_a_booked_row_cannot_be_moved_to_nothing(self):
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            await service.finish_print(db, print_id, models.STATUS_FINISHED, AUTO, NOW)
+            booked = (await store.list_filaments(db, print_id))[0]
+
+            with self.assertRaises(service.UsageError):
+                await service.assign_spool(db, booked.id, None)
+
     async def test_assigning_without_booking_leaves_the_print_open(self):
         self.slots = {"0-0": 7}
         self.have_spools(7, 9)
