@@ -541,10 +541,13 @@
           }
           row.appendChild(state);
 
-          var detail = printer.current_file_name
+          var running = Boolean(printer.current_file_name);
+          var detail = running
             ? t('status.printing', { file: printer.current_file_name })
             : t('status.idle');
-          if (printer.progress_percent !== null && printer.progress_percent !== undefined) {
+          // A percentage next to "no print running" is noise, and the printer
+          // keeps reporting the last one long after it ended.
+          if (running && printer.progress_percent !== null && printer.progress_percent !== undefined) {
             detail += ' (' + printer.progress_percent + '%)';
           }
           row.appendChild(el('span', 'printer-detail', detail));

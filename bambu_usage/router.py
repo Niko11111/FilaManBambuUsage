@@ -65,8 +65,11 @@ LANGUAGE_PATTERN = re.compile(r"^[a-z]{2}(-[a-z]{2})?$")
 
 JSON_MEDIA_TYPE = "application/json"
 
-# Clients may cache a dictionary for an hour. It only changes on a plugin update.
-LOCALE_CACHE_SECONDS = 3600
+# The dictionary is never cached. It changes on exactly the occasion where a
+# stale copy hurts most, a plugin update, and a page showing raw keys like
+# "history.heading" for an hour afterwards looks broken in a way nobody can
+# explain. It is a few kilobytes, fetched once per page load, on a LAN.
+LOCALE_CACHE_CONTROL = "no-store"
 
 # Changing a setting of this plugin changes how a printer is tracked, so it
 # borrows FilaMan's own permission for changing a printer. Inventing a key of
@@ -239,7 +242,7 @@ async def translations(language: str) -> Response:
     return Response(
         content=body,
         media_type=JSON_MEDIA_TYPE,
-        headers={"Cache-Control": f"max-age={LOCALE_CACHE_SECONDS}"},
+        headers={"Cache-Control": LOCALE_CACHE_CONTROL},
     )
 
 
