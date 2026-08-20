@@ -55,7 +55,6 @@
     "tracking": "Track this printer",
     "autoSpend": "Deduct automatically when a print finishes",
     "spendOnCancel": "Deduct an aborted print at the share it got through",
-    "clearAssignment": "Clear the slot assignment when a spool runs empty",
     "retention": "Keep history for days",
     "retentionHint": "0 keeps everything. Plate previews are stored with the print, so this is what bounds the size of the database.",
     "save": "Save",

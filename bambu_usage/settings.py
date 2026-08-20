@@ -110,7 +110,6 @@ def _to_settings(row: Any | None, printer_id: int) -> PluginSettings:
         tracking_enabled=row.tracking_enabled,
         auto_spend=row.auto_spend,
         spend_on_cancel=row.spend_on_cancel,
-        clear_assignment_when_empty=row.clear_assignment_when_empty,
         history_retention_days=row.history_retention_days,
     )
 
@@ -127,7 +126,6 @@ def _writable_values(settings: PluginSettings) -> dict[str, Any]:
         "tracking_enabled": settings.tracking_enabled,
         "auto_spend": settings.auto_spend,
         "spend_on_cancel": settings.spend_on_cancel,
-        "clear_assignment_when_empty": settings.clear_assignment_when_empty,
         "history_retention_days": settings.history_retention_days,
         "updated_at": datetime.now(timezone.utc),
     }

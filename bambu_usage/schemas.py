@@ -27,7 +27,6 @@ class PluginSettings(BaseModel):
     # to how far it got, not as the full estimate. Booking nothing would leave
     # the spool wrong after every abort.
     spend_on_cancel: bool = True
-    clear_assignment_when_empty: bool = False
     history_retention_days: int = Field(default=365, ge=0)
 
 

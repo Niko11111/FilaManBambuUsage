@@ -116,7 +116,7 @@ One row per printer, plus a global row with `printer_id = 0`.
 | `tracking_enabled` | bool | `true` | start a listener at all |
 | `auto_spend` | bool | `true` | deduct automatically. Counterpart to `AUTO_SPEND` |
 | `spend_on_cancel` | bool | `true` | deduct an abort as well, at the share it got through, see `01_Design.md` 6.3 |
-| `clear_assignment_when_empty` | bool | `false` | counterpart to `CLEAR_ASSIGNMENT_WHEN_EMPTY` |
+| `clear_assignment_when_empty` | bool | `false` | **abandoned**, never read. It would mean writing into the driver's table, see `01_Design.md` 8.2. Kept because nothing here is dropped |
 | `history_retention_days` | int | `365` | `0` means unlimited |
 | `updated_at` | datetime | | |
 

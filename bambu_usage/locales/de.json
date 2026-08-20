@@ -55,7 +55,6 @@
     "tracking": "Diesen Drucker erfassen",
     "autoSpend": "Nach jedem fertigen Druck automatisch abbuchen",
     "spendOnCancel": "Abgebrochenen Druck anteilig abbuchen",
-    "clearAssignment": "Slot-Zuordnung aufheben, wenn eine Spule leer ist",
     "retention": "Historie aufbewahren, Tage",
     "retentionHint": "0 behält alles. Die Plate-Vorschau liegt beim Druck, das begrenzt also die Größe der Datenbank.",
     "save": "Speichern",

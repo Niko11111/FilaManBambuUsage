@@ -289,10 +289,22 @@ variables:
 | Tracking enabled | none, new | on |
 | Deduct automatically | `AUTO_SPEND` | on |
 | Deduct on abort | none, new | on, and only the share that ran |
-| Clear assignment when empty | `CLEAR_ASSIGNMENT_WHEN_EMPTY` | off |
+| ~~Clear assignment when empty~~ | `CLEAR_ASSIGNMENT_WHEN_EMPTY` | **not adopted**, see below |
 | Keep history (days) | none, new | 365 |
 
 `TRACK_LAYER_USAGE` is deliberately absent, it belongs to stage 4.
+
+**`CLEAR_ASSIGNMENT_WHEN_EMPTY` is not adopted at all.** Clearing the link
+between a tray and a spool means writing into FilaMan's
+`printer_slot_assignments`, and that table belongs to the Bambu Lab driver, which
+rewrites it from the printer's RFID data on the next report. Two writers on one
+row, and the other one is faster. The switch existed in OpenSpoolMan because
+Spoolman has no driver keeping that link current; FilaMan has one, so taking an
+emptied spool out and putting a new one in updates the assignment by itself and
+this plugin simply reads the result. See CLAUDE.md section 4.
+
+The column stays in `bambu_usage_settings`, because nothing in this schema is
+ever dropped, and it is marked as abandoned there.
 
 ## 9. Languages
 

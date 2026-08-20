@@ -328,10 +328,6 @@
           <input type="checkbox" id="spend-on-cancel" />
           <span data-i18n="settings.spendOnCancel"></span>
         </label>
-        <label class="check">
-          <input type="checkbox" id="clear-assignment" />
-          <span data-i18n="settings.clearAssignment"></span>
-        </label>
         <div class="field">
           <span data-i18n="settings.retention"></span>
           <input type="number" id="retention" min="0" step="1" />
@@ -863,7 +859,6 @@
         document.getElementById('tracking-enabled').checked = row.tracking_enabled !== false;
         document.getElementById('auto-spend').checked = row.auto_spend !== false;
         document.getElementById('spend-on-cancel').checked = row.spend_on_cancel !== false;
-        document.getElementById('clear-assignment').checked = row.clear_assignment_when_empty === true;
         document.getElementById('retention').value =
           row.history_retention_days === undefined ? '' : row.history_retention_days;
       }
@@ -877,7 +872,6 @@
           tracking_enabled: document.getElementById('tracking-enabled').checked,
           auto_spend: document.getElementById('auto-spend').checked,
           spend_on_cancel: document.getElementById('spend-on-cancel').checked,
-          clear_assignment_when_empty: document.getElementById('clear-assignment').checked,
           history_retention_days: Number(document.getElementById('retention').value || 0)
         };
 

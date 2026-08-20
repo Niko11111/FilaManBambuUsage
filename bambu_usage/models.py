@@ -85,6 +85,11 @@ settings_table = Table(
     Column("tracking_enabled", Boolean, nullable=False, default=True),
     Column("auto_spend", Boolean, nullable=False, default=True),
     Column("spend_on_cancel", Boolean, nullable=False, default=True),
+    # Abandoned, and kept only because nothing here is ever dropped. Clearing a
+    # slot assignment would mean writing into FilaMan's printer_slot_assignments,
+    # which the Bambu Lab driver owns and rewrites from RFID on the next report.
+    # Two writers on one row is worse than a missing switch. See CLAUDE.md
+    # section 4 and docs/01_Design.md section 8.2.
     Column("clear_assignment_when_empty", Boolean, nullable=False, default=False),
     Column("history_retention_days", Integer, nullable=False, default=365),
     Column("updated_at", DateTime(timezone=True), server_default=func.now()),
