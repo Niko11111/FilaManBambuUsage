@@ -49,7 +49,12 @@ reimplementation could. This plugin only reads that state.
 python3 tools/build_zip.py            # -> dist/bambu_usage-<version>.zip
 python3 tools/build_zip.py --check    # validate only
 python3 tools/build_zip.py --selftest # prove the validation bites
+python3 tools/build_zip.py --force    # overwrite a build of the same version
 ```
+
+Building the same version twice is refused. A version number has to describe
+exactly one package, or an installed plugin and the version it reports stop
+agreeing.
 
 The build mirrors FilaMan's own checks: extension allow list, size limit,
 required files, manifest schema. What passes here is accepted by FilaMan.

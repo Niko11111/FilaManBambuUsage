@@ -185,10 +185,31 @@ def validate(plugin_dir: Path) -> tuple[dict, list[Path]]:
     return manifest, files
 
 
-def build(plugin_dir: Path, manifest: dict, files: list[Path]) -> Path:
-    """Write the ZIP. The plugin folder is kept as the single top level entry."""
-    DIST_DIR.mkdir(exist_ok=True)
-    out_path = DIST_DIR / f"{manifest['plugin_key']}-{manifest['version']}.zip"
+def build(
+    plugin_dir: Path,
+    manifest: dict,
+    files: list[Path],
+    force: bool = False,
+    dist_dir: Path | None = None,
+) -> Path:
+    """Write the ZIP. The plugin folder is kept as the single top level entry.
+
+    Refuses to overwrite an existing build of the same version, because two
+    different packages under one version number is a debugging trap: the
+    installed files and the version an instance reports no longer agree, and the
+    difference is invisible from the outside. Learned the hard way on 0.1.2.
+    Bump the version, or pass --force when the previous build was never
+    installed anywhere.
+    """
+    target = dist_dir or DIST_DIR
+    target.mkdir(exist_ok=True, parents=True)
+    out_path = target / f"{manifest['plugin_key']}-{manifest['version']}.zip"
+
+    if out_path.exists() and not force:
+        raise ValidationError(
+            f"{out_path.name} already exists. Bump the version in plugin.json and "
+            "__init__.py, or pass --force if that build never left this machine."
+        )
 
     with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for path in files:
@@ -222,14 +243,32 @@ def selftest() -> int:
             print(f"FAILED: a clean package was rejected: {exc}")
             return 1
 
+        # Building the same version twice has to be refused. Two different
+        # packages under one version number is what makes an installed plugin
+        # and the version it reports disagree, with nothing visible from outside.
+        manifest, files = validate(staged)
+        sandbox = Path(tmp) / "dist"
+        build(staged, manifest, files, dist_dir=sandbox)
+        try:
+            build(staged, manifest, files, dist_dir=sandbox)
+        except ValidationError:
+            pass
+        else:
+            print("FAILED: a second build of the same version should have been refused")
+            return 1
+
+        # With --force it has to go through, for a build that never left here.
+        build(staged, manifest, files, force=True, dist_dir=sandbox)
+
         # With a forbidden extension it has to be rejected.
         (staged / "preview.png").write_bytes(b"\x89PNG\r\n\x1a\n")
         try:
             validate(staged)
         except ValidationError as exc:
             print("Self test passed.")
-            print("  clean package          accepted")
-            print(f"  package with preview.png rejected: {str(exc).splitlines()[0]}")
+            print("  clean package             accepted")
+            print("  same version twice        refused, --force accepted")
+            print(f"  package with preview.png  rejected: {str(exc).splitlines()[0]}")
             return 0
 
         print("FAILED: preview.png should have been rejected")
@@ -240,6 +279,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="validate only, write nothing")
     parser.add_argument("--selftest", action="store_true", help="test the validation itself")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite an existing build of the same version",
+    )
     args = parser.parse_args()
 
     if args.selftest:
@@ -259,7 +303,7 @@ def main() -> int:
         return 0
 
     try:
-        out_path = build(PLUGIN_DIR, manifest, files)
+        out_path = build(PLUGIN_DIR, manifest, files, force=args.force)
     except ValidationError as exc:
         print(f"Build failed: {exc}", file=sys.stderr)
         return 1
