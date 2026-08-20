@@ -297,10 +297,18 @@ so the dictionaries ship inside the package. See section 9.
 
 ### 8.2 What the page shows
 
-**History** as the main view: per print a preview image, file name, printer,
-timestamp, status, and per slot the consumption together with the spool it was
-booked against. Rows with an open assignment are highlighted and carry a
-dropdown of spools, so the correction happens where the problem is visible.
+**History** as the main view. One card per print: the preview image, the file
+name and the outcome as a badge, a line of facts underneath (printer, whether
+the job came from the cloud or from the printer itself, when it ran, how many
+layers), and then one block per filament with its colour, its slot, the spool it
+was booked against and the two weights.
+
+A block whose spool is still open is highlighted, because that is the only thing
+the page ever asks of a human. Everything that can be changed about one filament
+sits behind the pencil on its block and opens one window: the booked amount, and
+the spool, chosen from a filtered list with colour and remaining weight rather
+than from a dropdown. Changing the spool of a filament that was already booked
+**moves** the booking, see `04_Data_Model.md`.
 
 **Status** compactly above it: connected or not per printer, the running print,
 the last error.

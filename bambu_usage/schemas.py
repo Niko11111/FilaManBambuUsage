@@ -87,6 +87,9 @@ class PrintRecord(BaseModel):
     spent: bool
     # How far a print that did not finish got, 0.0 to 1.0. None when unknown.
     completed_fraction: float | None = None
+    # How many layers the print has, taken from the curves read out of its
+    # gcode. None when there are none.
+    layer_count: int | None = None
     # What the print cost, in FilaMan's currency. None when no spool involved
     # carries the numbers to work it out.
     cost: float | None = None

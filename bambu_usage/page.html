@@ -216,9 +216,17 @@
     /* A grid column defaults to min-width auto, which lets a wide table push
        past the card instead of scrolling inside it. */
     .print-body { min-width: 0; }
-    .filament-scroll { overflow-x: auto; }
 
+    .print-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px 16px;
+      flex-wrap: wrap;
+      margin-bottom: 4px;
+    }
     .print-title { font-weight: 600; word-break: break-all; }
+    .print-badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .print-problem {
       color: var(--error-text);
       font-size: 0.85rem;
@@ -230,10 +238,12 @@
       font-size: 0.85rem;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       flex-wrap: wrap;
-      margin-bottom: 10px;
     }
+    /* The separator lives in CSS because it is punctuation, not language, and
+       it must not appear in front of the first fact. */
+    .print-meta span + span::before { content: "\00b7"; margin-right: 8px; }
     .badge {
       /* inline-flex, not inline-block: a flex item stretches to the height of
          its row, and the text would then sit at the top of a pill that is
@@ -251,30 +261,79 @@
     .badge.bad { color: var(--error-text); }
     .badge.open { color: var(--accent-3); border-color: var(--accent-3); }
 
-    table.filaments { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-    table.filaments th {
-      text-align: left;
-      font-weight: 500;
-      color: var(--text-muted);
-      padding: 4px 10px 4px 0;
-      font-size: 0.78rem;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
+    /* The outcome of the print, which is the one thing to be readable across
+       the room. Everything else next to it stays a quiet outline. */
+    .badge.status {
+      font-size: 0.82rem;
+      font-weight: 600;
+      padding: 4px 12px;
+      color: var(--text);
     }
-    table.filaments td { padding: 6px 10px 6px 0; vertical-align: middle; }
-    table.filaments tr.needs-spool { background: rgba(247,200,106,0.08); }
+    .badge.status.live {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 16%, transparent);
+    }
+    .badge.status.good {
+      border-color: var(--success-text);
+      background: color-mix(in srgb, var(--success-text) 16%, transparent);
+    }
+    .badge.status.bad {
+      color: var(--error-text);
+      border-color: var(--error-text);
+      background: color-mix(in srgb, var(--error-text) 16%, transparent);
+    }
 
-    /* Only there when a spool was swapped mid print and the row was split. */
-    .span-note { color: var(--text-muted); font-size: 0.78rem; }
-
-    .swatch {
-      display: inline-block;
-      width: 12px; height: 12px;
+    /* One block per filament instead of a table row. A print has two or three
+       of these, and each carries three lines that belong together; a table made
+       every one of them scroll sideways on a phone for no gain. */
+    .filaments { display: grid; gap: 8px; margin-top: 12px; }
+    .filament {
+      display: grid;
+      grid-template-columns: 6px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      background: var(--bg-soft);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+    }
+    .filament.needs-spool {
+      border-color: var(--accent-3);
+      background: color-mix(in srgb, var(--accent-3) 10%, transparent);
+    }
+    .filament-color {
+      align-self: stretch;
+      min-height: 40px;
       border-radius: 3px;
       border: 1px solid var(--border);
-      margin-right: 6px;
-      vertical-align: -1px;
     }
+    .filament-text { min-width: 0; }
+    .filament-what { font-weight: 600; font-size: 0.9rem; }
+    /* Slot and span sit beside the material without competing with it. */
+    .filament-what span {
+      margin-left: 8px;
+      font-weight: 400;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+    .filament-spool { font-size: 0.86rem; word-break: break-word; }
+    .filament-figures { color: var(--text-muted); font-size: 0.8rem; }
+
+    .icon-button {
+      font-family: inherit;
+      font-size: 1rem;
+      line-height: 1;
+      color: var(--text-muted);
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px 11px;
+      cursor: pointer;
+      transition: color var(--transition), border-color var(--transition);
+    }
+    .icon-button:hover { color: var(--accent); border-color: var(--accent); }
+    .icon-button:disabled { opacity: 0.5; cursor: default; }
 
     .row-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
@@ -353,6 +412,14 @@
 
     .picker { min-width: min(620px, 78vw); }
     .picker-head { margin-bottom: 12px; }
+    .picker-section { margin-bottom: 14px; }
+    .picker-label {
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
     .picker-title {
       font-family: var(--font-serif);
       font-size: 1.1rem;
@@ -515,6 +582,16 @@
       var GOOD_STATUS = { finished: true };
       var BAD_STATUS = { failed: true, cancelled: true };
 
+      // Where the job came from. A printer that reports something else shows
+      // what it said rather than nothing.
+      var PRINT_TYPE_KEYS = {
+        cloud: 'printType.cloud',
+        local: 'printType.local'
+      };
+
+      // A glyph, not a word: it carries its meaning in the translated title.
+      var PENCIL = '\u270e';
+
       var dictionary = {};
       var spools = new Map();
       var printers = [];
@@ -662,6 +739,14 @@
 
       function moment(value) {
         return value ? new Date(value).toLocaleString() : '';
+      }
+
+      function day(value) {
+        return value ? new Date(value).toLocaleDateString() : '';
+      }
+
+      function clock(value) {
+        return value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
       }
 
       /* ── printers ────────────────────────────────────────────── */
@@ -922,8 +1007,7 @@
       }
 
       function endOfPrint(minutes) {
-        var done = new Date(Date.now() + minutes * 60000);
-        return done.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return clock(new Date(Date.now() + minutes * 60000));
       }
 
       function renderPrint(record, isRunning) {
@@ -947,49 +1031,8 @@
         }
 
         var body = el('div', 'print-body');
-        body.appendChild(el('div', 'print-title', record.file_name));
-
-        var meta = el('div', 'print-meta');
-        meta.appendChild(el('span', null, printerName(record.printer_id)));
-        meta.appendChild(el('span', null, moment(record.finished_at || record.started_at)));
-
-        var key = STATUS_KEYS[record.status];
-        var badge = el('span', 'badge', key ? t(key) : record.status);
-        if (GOOD_STATUS[record.status]) badge.classList.add('good');
-        if (BAD_STATUS[record.status]) badge.classList.add('bad');
-        meta.appendChild(badge);
-
-        if (record.completed_fraction !== null && record.completed_fraction !== undefined
-            && BAD_STATUS[record.status]) {
-          meta.appendChild(el('span', 'badge', t('history.stoppedAt', {
-            percent: Math.round(record.completed_fraction * 100)
-          })));
-        }
-
-        if (record.cost !== null && record.cost !== undefined) {
-          meta.appendChild(el('span', 'badge', t('history.cost', {
-            amount: record.cost.toFixed(2),
-            currency: currency
-          })));
-        }
-
-        if (record.spent) {
-          var done = el('span', 'badge good', t('history.stateBooked'));
-          meta.appendChild(done);
-        } else if (unassigned(record)) {
-          meta.appendChild(el('span', 'badge open', t('history.openWork')));
-        }
-
-        if (!record.spent && bookable(record)) {
-          var book = el('button', 'button ghost', t('history.book'));
-          book.type = 'button';
-          book.addEventListener('click', function () {
-            act(book, write(ADMIN + '/print/' + record.id + '/spend', {}));
-          });
-          meta.appendChild(book);
-        }
-
-        body.appendChild(meta);
+        body.appendChild(printHead(record, isRunning));
+        body.appendChild(printFacts(record));
 
         // A booking that failed is skipped so the other spools still go
         // through. Saying so here is what keeps that from being invisible.
@@ -1006,12 +1049,90 @@
           body.appendChild(live);
         }
 
-        var scroll = el('div', 'filament-scroll');
-        scroll.appendChild(filamentTable(record));
-        body.appendChild(scroll);
+        var list = el('div', 'filaments');
+        record.filaments.forEach(function (usage) {
+          list.appendChild(filamentBlock(usage));
+        });
+        body.appendChild(list);
 
         wrapper.appendChild(body);
         return wrapper;
+      }
+
+      function printHead(record, isRunning) {
+        var head = el('div', 'print-head');
+        head.appendChild(el('div', 'print-title', record.file_name));
+
+        var badges = el('div', 'print-badges');
+        var key = STATUS_KEYS[record.status];
+        var badge = el('span', 'badge status', key ? t(key) : record.status);
+        if (isRunning) badge.classList.add('live');
+        if (GOOD_STATUS[record.status]) badge.classList.add('good');
+        if (BAD_STATUS[record.status]) badge.classList.add('bad');
+        badges.appendChild(badge);
+
+        if (record.completed_fraction !== null && record.completed_fraction !== undefined
+            && BAD_STATUS[record.status]) {
+          badges.appendChild(el('span', 'badge', t('history.stoppedAt', {
+            percent: Math.round(record.completed_fraction * 100)
+          })));
+        }
+
+        if (record.spent) {
+          badges.appendChild(el('span', 'badge good', t('history.stateBooked')));
+        } else if (unassigned(record)) {
+          badges.appendChild(el('span', 'badge open', t('history.openWork')));
+        }
+
+        if (record.cost !== null && record.cost !== undefined) {
+          badges.appendChild(el('span', 'badge', t('history.cost', {
+            amount: record.cost.toFixed(2),
+            currency: currency
+          })));
+        }
+
+        if (!record.spent && bookable(record)) {
+          var book = el('button', 'button ghost', t('history.book'));
+          book.type = 'button';
+          book.addEventListener('click', function () {
+            act(book, write(ADMIN + '/print/' + record.id + '/spend', {}));
+          });
+          badges.appendChild(book);
+        }
+
+        head.appendChild(badges);
+        return head;
+      }
+
+      function printFacts(record) {
+        var facts = el('div', 'print-meta');
+        facts.appendChild(el('span', null, printerName(record.printer_id)));
+
+        if (record.print_type) {
+          var typeKey = PRINT_TYPE_KEYS[record.print_type];
+          facts.appendChild(el('span', null, typeKey ? t(typeKey) : record.print_type));
+        }
+
+        facts.appendChild(el('span', null, timespan(record)));
+
+        if (record.layer_count) {
+          facts.appendChild(el('span', null, t('history.layers', { count: record.layer_count })));
+        }
+        return facts;
+      }
+
+      function timespan(record) {
+        var started = day(record.started_at) + ' ' + clock(record.started_at);
+        if (!record.finished_at) return started;
+
+        // The date is worth saying once. A print that runs past midnight is the
+        // reason the second one is not simply dropped.
+        var sameDay = new Date(record.started_at).toDateString()
+          === new Date(record.finished_at).toDateString();
+        var ended = sameDay
+          ? clock(record.finished_at)
+          : day(record.finished_at) + ' ' + clock(record.finished_at);
+        return t('history.timespan', { from: started, to: ended });
       }
 
       function printState(record, isRunning) {
@@ -1036,64 +1157,60 @@
         });
       }
 
-      function filamentTable(record) {
-        var table = el('table', 'filaments');
-        var head = el('tr');
-        [
-          t('history.filament'), t('history.slot'), t('history.spool'),
-          t('history.estimated'), t('history.booked'), ''
-        ].forEach(function (caption) {
-          head.appendChild(el('th', null, caption));
-        });
-        table.appendChild(head);
+      function filamentBlock(usage) {
+        var assigned = usage.spool_id !== null && usage.spool_id !== undefined;
+        var block = el('div', assigned ? 'filament' : 'filament needs-spool');
 
-        record.filaments.forEach(function (usage) {
-          table.appendChild(filamentRow(usage));
-        });
-        return table;
+        var colour = el('div', 'filament-color');
+        if (usage.color_hex) colour.style.background = usage.color_hex;
+        block.appendChild(colour);
+
+        var text = el('div', 'filament-text');
+        text.appendChild(filamentWhat(usage));
+
+        // The material is what the slicer asked for; the link goes to the spool
+        // that answered for it, which is what somebody would want to open.
+        var named = el('div', 'filament-spool');
+        named.appendChild(link(spoolName(usage.spool_id),
+          assigned ? '/spools/' + usage.spool_id : null));
+        text.appendChild(named);
+
+        text.appendChild(el('div', 'filament-figures', filamentFigures(usage)));
+        block.appendChild(text);
+
+        var edit = el('button', 'icon-button', PENCIL);
+        edit.type = 'button';
+        edit.title = t('history.edit');
+        edit.setAttribute('aria-label', t('history.edit'));
+        edit.addEventListener('click', function () { openFilamentEditor(usage); });
+        block.appendChild(edit);
+
+        return block;
       }
 
-      function filamentRow(usage) {
-        var assigned = usage.spool_id !== null && usage.spool_id !== undefined;
-        var row = el('tr', assigned ? null : 'needs-spool');
+      function filamentWhat(usage) {
+        var what = el('div', 'filament-what', usage.material || '-');
+        what.appendChild(el('span', null,
+          usage.slot_index === EXTERNAL_SLOT_INDEX
+            ? t('history.external')
+            : t('history.slotIs', { slot: usage.slot_index || '-' })));
 
-        var spool = assigned ? spools.get(usage.spool_id) : null;
-
-        var first = el('td');
-        if (usage.color_hex) {
-          var swatch = el('span', 'swatch');
-          swatch.style.background = usage.color_hex;
-          first.appendChild(swatch);
-        }
-        // The material is what the slicer asked for; the link goes to the
-        // filament of the spool that answered for it, which is the thing in
-        // FilaMan somebody would want to open.
-        first.appendChild(link(usage.material || '', spool && spool.filamentId
-          ? '/filaments/' + spool.filamentId : null));
-        row.appendChild(first);
-
-        var slot = el('td');
-        slot.appendChild(document.createTextNode(
-          usage.slot_index === EXTERNAL_SLOT_INDEX ? t('history.external') : (usage.slot_index || '-')));
         if (isSplit(usage)) {
-          slot.appendChild(el('div', 'span-note', t('history.span', {
+          what.appendChild(el('span', null, t('history.span', {
             from: Math.round(share(usage.from_fraction, 0) * 100),
             to: Math.round(share(usage.to_fraction, 1) * 100)
           })));
         }
-        row.appendChild(slot);
-        var spoolCell = el('td');
-        spoolCell.appendChild(link(spoolName(usage.spool_id),
-          assigned ? '/spools/' + usage.spool_id : null));
-        row.appendChild(spoolCell);
-        row.appendChild(el('td', null, grams(usage.estimated_grams)));
+        return what;
+      }
 
-        var booked = el('td', null, usage.spent_at ? grams(usage.spent_grams) : t('history.notBooked'));
-        if (usage.manual_override) booked.title = t('history.corrected');
-        row.appendChild(booked);
-
-        row.appendChild(assigned ? correctionCell(usage) : assignmentCell(usage));
-        return row;
+      function filamentFigures(usage) {
+        var parts = [t('history.estimatedIs', { grams: grams(usage.estimated_grams) })];
+        parts.push(usage.spent_at
+          ? t('history.bookedIs', { grams: grams(usage.spent_grams) })
+          : t('history.notBooked'));
+        if (usage.manual_override) parts.push(t('history.corrected'));
+        return parts.join(' · ');
       }
 
       function isSplit(usage) {
@@ -1106,24 +1223,11 @@
         return value === null || value === undefined ? fallback : value;
       }
 
-      function assignmentCell(usage) {
-        var cell = el('td');
-
-        var button = el('button', 'button', t('history.assign'));
-        button.type = 'button';
-        button.addEventListener('click', function () {
-          openSpoolPicker(usage);
-        });
-
-        cell.appendChild(button);
-        return cell;
-      }
-
-      function openSpoolPicker(usage) {
-        // A window rather than a dropdown: with a few hundred spools the
-        // question "which one of these was in the tray" needs colour, remaining
-        // weight and a way to narrow the list, and none of that fits in an
-        // option element.
+      function openFilamentEditor(usage) {
+        // Everything that can be changed about one filament lives in this one
+        // window, so the card itself stays readable. The spool question needs
+        // colour, remaining weight and a way to narrow a few hundred entries,
+        // and none of that fits beside a table row.
         var state = {
           material: usage.material || '',
           query: '',
@@ -1132,12 +1236,54 @@
         };
 
         var box = el('div', 'picker');
+        box.appendChild(pickerHead(usage));
+
+        // Nothing to correct before a spool has answered for the filament.
+        if (usage.spool_id !== null && usage.spool_id !== undefined) {
+          box.appendChild(amountSection(usage));
+        }
+        box.appendChild(spoolSection(usage, state));
+
+        openOverlay(box);
+      }
+
+      function amountSection(usage) {
+        var section = el('div', 'picker-section');
+        section.appendChild(el('div', 'picker-label', t('editor.amount')));
+
+        var actions = el('div', 'row-actions');
+        var amount = el('input');
+        amount.type = 'number';
+        amount.min = '0';
+        amount.step = '0.1';
+        var current = usage.spent_grams === null || usage.spent_grams === undefined
+          ? usage.estimated_grams : usage.spent_grams;
+        amount.value = current === null || current === undefined ? '' : current.toFixed(1);
+        actions.appendChild(amount);
+
+        var button = el('button', 'button ghost', t('history.correct'));
+        button.type = 'button';
+        button.addEventListener('click', function () {
+          if (amount.value === '') return;
+          closeOverlay();
+          act(button, write(ADMIN + '/filament/' + usage.id + '/correct', {
+            grams: Number(amount.value)
+          }));
+        });
+        actions.appendChild(button);
+
+        section.appendChild(actions);
+        return section;
+      }
+
+      function spoolSection(usage, state) {
+        var section = el('div', 'picker-section');
         var list = el('div', 'picker-list');
 
-        box.appendChild(pickerHead(usage));
-        box.appendChild(pickerChips(state, function () { fill(); }));
-        box.appendChild(pickerTools(state, function () { fill(); }));
-        box.appendChild(list);
+        section.appendChild(el('div', 'picker-label', t('picker.heading')));
+        section.appendChild(pickerChips(state, function () { fill(); }));
+        section.appendChild(pickerTools(usage, state, function () { fill(); }));
+        section.appendChild(list);
 
         function fill() {
           list.textContent = '';
@@ -1153,12 +1299,12 @@
         }
 
         fill();
-        openOverlay(box);
+        return section;
       }
 
       function pickerHead(usage) {
         var head = el('div', 'picker-head');
-        head.appendChild(el('div', 'picker-title', t('picker.heading')));
+        head.appendChild(el('div', 'picker-title', t('editor.heading')));
         head.appendChild(el('div', 'picker-wanted', t('picker.wanted', {
           material: usage.material || '-',
           slot: usage.slot_index || '-'
@@ -1195,7 +1341,7 @@
         return chips;
       }
 
-      function pickerTools(state, changed) {
+      function pickerTools(usage, state, changed) {
         var tools = el('div', 'picker-tools');
 
         var search = el('input');
@@ -1220,14 +1366,18 @@
         });
         tools.appendChild(order);
 
-        var bookLabel = el('label', 'check');
-        var bookNow = el('input');
-        bookNow.type = 'checkbox';
-        bookNow.checked = state.bookNow;
-        bookNow.addEventListener('change', function () { state.bookNow = bookNow.checked; });
-        bookLabel.appendChild(bookNow);
-        bookLabel.appendChild(el('span', null, t('history.bookNow')));
-        tools.appendChild(bookLabel);
+        // Only a question while nothing is booked yet. Moving an existing
+        // booking happens either way, so offering the choice would lie.
+        if (!usage.spent_at) {
+          var bookLabel = el('label', 'check');
+          var bookNow = el('input');
+          bookNow.type = 'checkbox';
+          bookNow.checked = state.bookNow;
+          bookNow.addEventListener('change', function () { state.bookNow = bookNow.checked; });
+          bookLabel.appendChild(bookNow);
+          bookLabel.appendChild(el('span', null, t('history.bookNow')));
+          tools.appendChild(bookLabel);
+        }
 
         return tools;
       }
@@ -1273,6 +1423,10 @@
           '#' + entry.id + '  ' + entry.spool.material + (entry.spool.maker ? ' · ' + entry.spool.maker : '')));
         text.appendChild(el('div', 'picker-detail',
           entry.spool.designation + ' · ' + grams(entry.spool.remaining)));
+        // Which one the row sits on now, so nobody hunts for it in the list.
+        if (entry.id === usage.spool_id) {
+          text.appendChild(el('span', 'badge', t('picker.current')));
+        }
         row.appendChild(text);
 
         var button = el('button', 'button', t('picker.assign'));
@@ -1287,33 +1441,6 @@
         row.appendChild(button);
 
         return row;
-      }
-
-      function correctionCell(usage) {
-        var cell = el('td');
-        var actions = el('div', 'row-actions');
-
-        var amount = el('input');
-        amount.type = 'number';
-        amount.min = '0';
-        amount.step = '0.1';
-        var current = usage.spent_grams === null || usage.spent_grams === undefined
-          ? usage.estimated_grams : usage.spent_grams;
-        amount.value = current === null || current === undefined ? '' : current.toFixed(1);
-        actions.appendChild(amount);
-
-        var button = el('button', 'button ghost', t('history.correct'));
-        button.type = 'button';
-        button.addEventListener('click', function () {
-          if (amount.value === '') return;
-          act(button, write(ADMIN + '/filament/' + usage.id + '/correct', {
-            grams: Number(amount.value)
-          }));
-        });
-        actions.appendChild(button);
-
-        cell.appendChild(actions);
-        return cell;
       }
 
       function openOverlay(content) {

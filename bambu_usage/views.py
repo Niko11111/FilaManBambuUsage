@@ -78,6 +78,7 @@ async def get_history(db: AsyncSession, limit: int = 50, offset: int = 0) -> lis
                 status=entry.status,
                 spent=bool(entry.spent),
                 completed_fraction=entry.completed_fraction,
+                layer_count=_layer_count(entry.layer_shares),
                 cost=rules.print_cost(by_print.get(int(entry.id), []), prices),
                 has_thumbnail=entry.thumbnail_mime is not None,
                 error=entry.error,
@@ -86,6 +87,19 @@ async def get_history(db: AsyncSession, limit: int = 50, offset: int = 0) -> lis
         )
 
     return records
+
+
+def _layer_count(stored: str | None) -> int | None:
+    """How many layers a print has, read off the curves it stored.
+
+    Every curve has one entry per layer, so any of them answers it and no
+    column of its own is needed.
+    """
+    from . import store
+
+    for curve in store.decode_layer_shares(stored).values():
+        return len(curve)
+    return None
 
 
 async def get_printer_status(db: AsyncSession) -> list[PrinterStatus]:

@@ -29,16 +29,10 @@
     "none": "Noch kein Druck erfasst. Der nächste auf einem überwachten Drucker landet hier.",
     "preview": "Plate-Vorschau, zum Vergrößern klicken",
     "loadMore": "Mehr anzeigen",
-    "filament": "Filament",
-    "slot": "Slot",
     "external": "External Tray",
     "span": "{from}% bis {to}% dieses Filaments",
-    "estimated": "Geschätzt",
-    "booked": "Gebucht",
     "cost": "{amount} {currency}",
-    "spool": "Spule",
     "unassigned": "nicht zugeordnet",
-    "assign": "Zuordnen",
     "bookNow": "gleich buchen",
     "book": "Diesen Druck buchen",
     "correct": "Korrigieren",
@@ -47,10 +41,24 @@
     "notBooked": "nicht gebucht",
     "stateBooked": "gebucht",
     "openWork": "Zuordnung offen",
-    "bookingFailed": "Buchung fehlgeschlagen"
+    "bookingFailed": "Buchung fehlgeschlagen",
+    "slotIs": "Slot {slot}",
+    "estimatedIs": "geschätzt {grams}",
+    "bookedIs": "gebucht {grams}",
+    "layers": "{count} Layer",
+    "timespan": "{from} bis {to}",
+    "edit": "Spule oder Menge ändern"
+  },
+  "printType": {
+    "cloud": "Cloud-Druck",
+    "local": "Lokaler Druck"
+  },
+  "editor": {
+    "heading": "Filament bearbeiten",
+    "amount": "Gebuchte Menge"
   },
   "picker": {
-    "heading": "Spule zuordnen",
+    "heading": "Spule wählen",
     "wanted": "Slot {slot}, der Slicer wollte {material}",
     "all": "Alle",
     "search": "Suchen",
@@ -58,7 +66,8 @@
     "sortRemaining": "Meiste Restmenge",
     "sortUsed": "Zuletzt benutzt",
     "assign": "Zuordnen",
-    "none": "Keine Spule passt zu diesem Filter"
+    "none": "Keine Spule passt zu diesem Filter",
+    "current": "aktuell zugeordnet"
   },
   "printStatus": {
     "running": "läuft",
