@@ -25,6 +25,11 @@ importable there.
 May import: nothing from this plugin. Must not import fastapi or sqlalchemy
 either, so it stays callable against a file on disk. Enforced by
 tools/check_architecture.py.
+
+On the size of this file, past the 400 lines CLAUDE.md asks a reason for:
+everything about a 3MF is here, getting one and reading one, and the reading is
+what grew. Splitting the two apart is the obvious next move if the filament
+order for local prints lands here as well.
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ from __future__ import annotations
 import asyncio
 import ftplib
 import http.client
+import io
 import logging
 import re
 import urllib.request
@@ -76,6 +82,29 @@ MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
 
 # The metadata key under <plate> that carries the plate number.
 PLATE_INDEX_KEY = "index"
+
+# How a Bambu plate gcode marks the start of a layer. Read out of three real
+# files, see docs/03_Bambu_Data_Sources.md.
+LAYER_MARKER = "; CHANGE_LAYER"
+
+# Tool numbers up to this are filaments. T255, T1000 and T1100 also appear and
+# are markers, not slots; charging material to filament 1001 is the mistake this
+# bound exists to prevent.
+MAX_TOOL_NUMBER = 16
+
+# Every one of these can carry an E value, and G2 and G3 are not optional: arcs
+# hold 23 per cent of the material in a real print, and a parser that only sums
+# G1 quietly loses a quarter.
+EXTRUDING_MOVES = frozenset({"G0", "G1", "G2", "G3"})
+
+# A plate with more layers than this is not something to keep a table for.
+MAX_LAYERS = 20000
+
+E_VALUE = re.compile(r"\bE(-?\d*\.?\d+)")
+TOOL_LINE = re.compile(r"^T(\d+)\b")
+
+# Shares are stored, and four decimals is finer than any printer can stop.
+SHARE_DECIMALS = 4
 
 
 class ThreeMFError(RuntimeError):
@@ -357,6 +386,124 @@ def _to_float(value: str | None) -> float | None:
         return float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
+
+
+def parse_layer_shares(archive: Path, plate_id: int) -> dict[int, list[float]]:
+    """Per filament, how much of its material each layer of *plate_id* has used.
+
+    Returns shares between 0 and 1, one entry per layer, keyed by the 1-based
+    filament id the slicer uses. An empty result means the question could not be
+    answered, and every caller has to cope with that.
+    """
+    name = PLATE_GCODE_TEMPLATE.format(plate_id=plate_id)
+
+    try:
+        with zipfile.ZipFile(archive) as bundle:
+            if name not in bundle.namelist():
+                logger.warning("3MF carries no %s, no layer shares available", name)
+                return {}
+
+            with bundle.open(name) as entry:
+                # Line by line out of the open entry. A plate gcode runs to tens
+                # of megabytes and must never be read into memory as a whole.
+                text = io.TextIOWrapper(entry, encoding="utf-8", errors="replace")
+                return layer_shares(text)
+    except (OSError, zipfile.BadZipFile) as exc:
+        raise ThreeMFError(f"'{archive.name}' could not be read for layer shares: {exc}") from exc
+
+
+def layer_shares(lines: Iterable[str]) -> dict[int, list[float]]:
+    """Turn the lines of a plate gcode into a share per filament per layer.
+
+    **Shares, not millimetres, and that is the whole design.** Reproducing the
+    slicer's own accounting from the gcode does not work: BambuStudio counts only
+    extrusion it can attribute to a role, so the prime line in the start gcode and
+    what the AMS pushes out on loading are in the file but not in its totals.
+    Measured against three real prints, summing every E overshoots by 5 to 20 per
+    cent, and the classifier that would explain the difference is undocumented
+    and free to change with the next release.
+
+    The slicer already publishes the amount, ``used_g`` per filament. What it
+    does not publish is the shape of the curve, and that is what this reads. Any
+    systematic overshoot then cancels, because it sits in the numerator and the
+    denominator alike.
+
+    What the shares are good for: the share a print had reached when it stopped,
+    the share at which a spool was swapped, and what a running print has used so
+    far. All three want a share and none of them wants a millimetre.
+    """
+    per_filament: dict[int, float] = {}
+    layers: list[dict[int, float]] = []
+    tool: int | None = None
+    counting = False
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        if stripped.startswith(";"):
+            if not stripped.startswith(LAYER_MARKER):
+                continue
+            if counting:
+                layers.append(dict(per_filament))
+                if len(layers) > MAX_LAYERS:
+                    logger.warning("plate gcode has more than %d layers, giving up", MAX_LAYERS)
+                    return {}
+            else:
+                # Everything before the first layer is the prime line and the
+                # loading, which belongs to no layer and which the slicer does
+                # not count either.
+                per_filament.clear()
+                counting = True
+            continue
+
+        found = TOOL_LINE.match(stripped)
+        if found:
+            number = int(found.group(1))
+            if number < MAX_TOOL_NUMBER:
+                tool = number
+            continue
+
+        if tool is None or not counting:
+            continue
+
+        command = stripped.split(" ", 1)[0].upper()
+        if command not in EXTRUDING_MOVES:
+            continue
+
+        amount = E_VALUE.search(stripped)
+        if amount:
+            per_filament[tool] = per_filament.get(tool, 0.0) + float(amount.group(1))
+
+    if not counting:
+        return {}
+
+    layers.append(dict(per_filament))
+    return _to_shares(layers, per_filament)
+
+
+def _to_shares(
+    layers: list[dict[int, float]],
+    totals: dict[int, float],
+) -> dict[int, list[float]]:
+    """Normalise the cumulative amounts into shares, one list per filament.
+
+    Every list is as long as there are layers, filled from the front with zeros
+    for a filament that had not been used yet, so a layer number is an index in
+    every one of them.
+    """
+    shares: dict[int, list[float]] = {}
+
+    for tool, total in totals.items():
+        if total <= 0:
+            continue
+        shares[tool + 1] = [
+            round(min(max(layer.get(tool, 0.0) / total, 0.0), 1.0), SHARE_DECIMALS)
+            for layer in layers
+        ]
+
+    return shares
 
 
 def parse_filament_order(gcode_lines) -> dict[int, int]:

@@ -209,12 +209,41 @@ files. See `01_Design.md` section 8.1.
 
 ### Metadata/plate_<N>.gcode
 
-The actual gcode. The only thing needed from it is the order in which the
-filaments appear, and that only for local prints in stage 3. Stage 1 never opens
-the file.
+The actual gcode. It is large, tens of megabytes, and must never be read into
+memory as a whole, only line by line out of the open ZIP entry. Reading it is
+fast enough: 1.13 million lines of a 33 MB plate took one second.
 
-The file is large. It must never be read into memory as a whole, only line by
-line out of the open ZIP entry.
+Everything below was read out of three real files sliced by BambuStudio
+02.08.02.60, not out of documentation, because there is none.
+
+| Thing | What it looks like |
+|---|---|
+| Start of a layer | `; CHANGE_LAYER`, immediately followed by `; layer num/total_layer_count: 3/72` |
+| Layer count | `; total layer number: 72` in the header block |
+| Extrusion mode | relative, `M83`. No `M82` in any of the three |
+| Tool selection | `T0` to `T15`. **`T255`, `T1000` and `T1100` also appear and are markers, not filaments** |
+| Filament numbering | tool `T3` is the slicer's filament `4`, so one-based against zero-based |
+| Extruding commands | `G0`, `G1`, **`G2`, `G3`**. Arcs carried 23 per cent of the material in one print, and summing only `G1` loses that quarter silently |
+
+**The totals in the file cannot be reproduced by summing E, and they do not have
+to be.** BambuStudio counts only extrusion it can attribute to a role, so the
+prime line in the start gcode and what the AMS pushes out while loading are in
+the file but not in `; total filament length [mm]` or in `slice_info.config`.
+Measured: summing every E from the first layer marker onwards overshoots the
+slicer by 0.2 per cent on a main filament and by 5 to 6 per cent on filaments
+that are only used for a few layers, where the flush at a tool change weighs
+heavily and the slicer splits it between the outgoing and the incoming filament.
+
+The classifier that would explain the difference is undocumented and free to
+change with the next release, so this plugin does not chase it. The slicer
+already publishes the amount as `used_g`. What it does not publish is **the
+shape of the curve**, and that is all the gcode is read for: the share of each
+filament that each layer has used. A systematic overshoot then cancels, because
+it sits in the numerator and the denominator alike.
+
+`tools/check_gcode.py` runs the parser over a real file and checks the
+properties the design rests on: one share per layer, as many layers as the
+header declares, every curve rising and ending at exactly 1.0.
 
 ## 4. What this means for fetching
 

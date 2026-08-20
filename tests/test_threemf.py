@@ -20,7 +20,9 @@ from bambu_usage.threemf import (
     MAX_THUMBNAIL_BYTES,
     THUMBNAIL_MIME,
     ThreeMFError,
+    layer_shares,
     parse,
+    parse_layer_shares,
     parse_slice_info,
 )
 
@@ -226,3 +228,124 @@ class ParseArchiveTest(unittest.TestCase):
     def test_a_file_that_is_not_there(self):
         with self.assertRaises(ThreeMFError):
             parse(self.root / "absent.3mf")
+
+
+# Written in the syntax of a real Bambu plate gcode, checked against three of
+# them: the layer marker, relative extrusion, arcs, and tool numbers above the
+# real ones that are markers rather than filaments. See tools/check_gcode.py for
+# running the parser over an actual file.
+PLATE_GCODE = """
+; HEADER_BLOCK_START
+; total layer number: 3
+; HEADER_BLOCK_END
+M83
+T1000
+G1 E20 F1800
+; the prime line above belongs to no layer
+
+; CHANGE_LAYER
+; layer num/total_layer_count: 1/3
+T0
+G1 X10 Y10 E4
+G1 E-.4 F1800
+G1 E.4 F1800
+G2 X11 Y11 I.5 J.5 E1
+
+; CHANGE_LAYER
+; layer num/total_layer_count: 2/3
+G3 X12 Y12 I.5 J.5 E5
+T1
+G1 X20 Y20 E2
+
+; CHANGE_LAYER
+; layer num/total_layer_count: 3/3
+T255
+G1 X21 Y21 E2
+M400
+"""
+
+
+class LayerSharesTest(unittest.TestCase):
+    """The curve of how much of a filament each layer has used."""
+
+    def setUp(self):
+        self.shares = layer_shares(PLATE_GCODE.splitlines())
+
+    def test_one_curve_per_filament_used(self):
+        # Tools are numbered from zero, the slicer counts filaments from one.
+        self.assertEqual(sorted(self.shares), [1, 2])
+
+    def test_one_entry_per_layer(self):
+        for filament_id, curve in self.shares.items():
+            with self.subTest(filament=filament_id):
+                self.assertEqual(len(curve), 3)
+
+    def test_every_curve_ends_at_one(self):
+        for filament_id, curve in self.shares.items():
+            with self.subTest(filament=filament_id):
+                self.assertEqual(curve[-1], 1.0)
+
+    def test_arcs_count_as_material(self):
+        # Filament 1 lays 5 in layer one and 5 in layer two, and half of that
+        # comes from G2 and G3. Arcs carry about a quarter of a real print, so
+        # missing them would look plausible and be wrong.
+        self.assertEqual(self.shares[1], [0.5, 1.0, 1.0])
+
+    def test_a_filament_used_late_stays_at_zero_before(self):
+        # The case that justifies the whole exercise: booking a share of this
+        # filament at layer one would charge for material never extruded.
+        self.assertEqual(self.shares[2], [0.0, 0.5, 1.0])
+
+    def test_retraction_and_unretraction_cancel(self):
+        # Layer one has a -.4 and a +.4 in it, and 4 + 1 is what is left.
+        self.assertEqual(self.shares[1][0], 0.5)
+
+    def test_the_prime_line_belongs_to_no_layer(self):
+        # 20 before the first marker, against 10 across the layers. Counting it
+        # would put every curve out by two thirds.
+        self.assertEqual(self.shares[1][0], 0.5)
+
+    def test_marker_tools_are_not_filaments(self):
+        # T1000 and T255 are markers. A filament 1001 would be charged for
+        # material and nobody would ever look at that row.
+        self.assertNotIn(1001, self.shares)
+        self.assertNotIn(256, self.shares)
+
+    def test_gcode_without_a_layer_marker_says_nothing(self):
+        self.assertEqual(layer_shares(["M83", "T0", "G1 X1 Y1 E5"]), {})
+
+    def test_nothing_at_all(self):
+        self.assertEqual(layer_shares([]), {})
+
+
+class ParseLayerSharesTest(unittest.TestCase):
+    """The same, read out of an archive."""
+
+    def setUp(self):
+        self._directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self._directory.cleanup)
+        self.root = Path(self._directory.name)
+
+    def build(self, entries):
+        path = self.root / "job.3mf"
+        with zipfile.ZipFile(path, "w") as bundle:
+            for entry, payload in entries.items():
+                bundle.writestr(entry, payload)
+        return path
+
+    def test_the_plate_named_in_slice_info(self):
+        archive = self.build({"Metadata/plate_6.gcode": PLATE_GCODE})
+        self.assertEqual(sorted(parse_layer_shares(archive, 6)), [1, 2])
+
+    def test_a_plate_that_is_not_in_the_archive(self):
+        # A 3MF without its gcode is not an error, only a print that keeps
+        # working off the slicer estimate.
+        archive = self.build({"Metadata/plate_1.gcode": PLATE_GCODE})
+        with self.assertLogs("bambu_usage.threemf", level="WARNING"):
+            self.assertEqual(parse_layer_shares(archive, 6), {})
+
+    def test_something_that_is_not_an_archive(self):
+        broken = self.root / "broken.3mf"
+        broken.write_bytes(b"not a zip")
+        with self.assertRaises(ThreeMFError):
+            parse_layer_shares(broken, 1)
