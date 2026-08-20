@@ -24,6 +24,9 @@
       /* The colour of a filament, shown on the card and in the picker. One
          number, because it is the same thing in both places. */
       --swatch-width: 12px;
+      /* Wide enough that the plate is recognisable, and tall enough to reach
+         the bottom of the first filament block on a running print. */
+      --preview-size: 220px;
       --shadow-sm: 0 6px 18px rgba(0,0,0,0.08);
       --transition: 220ms ease;
     }
@@ -179,13 +182,28 @@
     /* The running print stands apart, which is the whole point of it. */
     .running-card { border-color: var(--accent); }
 
+    /* How far along the print is, which is what somebody standing in front of
+       the printer came to the page for. The number leads, the bar follows. */
+    .live-head {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin: 6px 0 8px;
+    }
+    .live-percent {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--text);
+      /* Fixed, so the bar does not jump when the number grows a digit. */
+      min-width: 2.8em;
+    }
     .bar {
-      height: 6px;
+      flex: 1;
+      height: 8px;
       border-radius: 999px;
       background: var(--bg-soft);
       border: 1px solid var(--border);
       overflow: hidden;
-      margin: 2px 0 10px;
     }
     .bar-fill {
       height: 100%;
@@ -195,7 +213,7 @@
 
     .print {
       display: grid;
-      grid-template-columns: 132px 1fr;
+      grid-template-columns: var(--preview-size) 1fr;
       gap: 18px;
       padding: 20px 0 20px 14px;
       border-top: 1px solid var(--border);
@@ -210,12 +228,16 @@
     .print.state-failed { border-left-color: var(--error-text); }
     .print:first-child { border-top: none; }
     .print-preview {
-      width: 132px; height: 132px;
+      width: var(--preview-size); height: var(--preview-size);
       border-radius: var(--radius-sm);
       border: 1px solid var(--border);
       background: var(--bg-soft);
       object-fit: contain;
     }
+    /* Where no preview was stored the column stays, so every card in the list
+       lines up, but an empty frame this size would read as a broken image. */
+    div.print-preview { border: none; background: none; }
+
     /* A grid column defaults to min-width auto, which lets a wide table push
        past the card instead of scrolling inside it. */
     .print-body { min-width: 0; }
@@ -1023,10 +1045,13 @@
         var fill = el('div', 'bar-fill');
         fill.style.width = percent + '%';
         bar.appendChild(fill);
-        host.appendChild(bar);
+
+        var head = el('div', 'live-head');
+        head.appendChild(el('span', 'live-percent', percent + '%'));
+        head.appendChild(bar);
+        host.appendChild(head);
 
         var line = el('div', 'print-meta');
-        line.appendChild(el('span', null, percent + '%'));
 
         if (printer.layer_num && printer.total_layer_num) {
           line.appendChild(el('span', null, t('history.layer', {
