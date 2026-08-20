@@ -186,6 +186,11 @@
       background: var(--bg-soft);
       object-fit: contain;
     }
+    /* A grid column defaults to min-width auto, which lets a wide table push
+       past the card instead of scrolling inside it. */
+    .print-body { min-width: 0; }
+    .filament-scroll { overflow-x: auto; }
+
     .print-title { font-weight: 600; word-break: break-all; }
     .print-meta {
       color: var(--text-muted);
@@ -234,6 +239,8 @@
     }
 
     .row-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+    select { max-width: 320px; }
 
     select, input[type="number"], input[type="text"] {
       font-family: inherit;
@@ -601,7 +608,14 @@
         return read(query).then(function (data) {
           var items = (data && data.items) || [];
           items.forEach(function (spool) {
-            spools.set(spool.id, spoolLabel(spool));
+            var filament = spool.filament || {};
+            var colors = filament.colors || [];
+            spools.set(spool.id, {
+              label: spoolLabel(spool),
+              material: filament.material_type || '',
+              color: normalizeColor(colors.length && colors[0].color ? colors[0].color.hex_code : ''),
+              remaining: spool.remaining_weight_g
+            });
           });
           var seen = page * SPOOL_PAGE_SIZE;
           if (data && data.total > seen && page < SPOOL_PAGE_LIMIT) {
@@ -619,16 +633,37 @@
         var parts = [];
         if (filament.manufacturer && filament.manufacturer.name) parts.push(filament.manufacturer.name);
         if (filament.designation) parts.push(filament.designation);
-        if (filament.manufacturer_color_name) parts.push(filament.manufacturer_color_name);
+        // Only a real colour name. Several of these hold a bare hex code, which
+        // says nothing next to a designation that already names the colour.
+        if (filament.manufacturer_color_name && !isHex(filament.manufacturer_color_name)) {
+          parts.push(filament.manufacturer_color_name);
+        }
         if (spool.remaining_weight_g !== null && spool.remaining_weight_g !== undefined) {
           parts.push(grams(spool.remaining_weight_g));
         }
         return '#' + spool.id + ' ' + parts.join(', ');
       }
 
+      function isHex(value) {
+        return /^#?[0-9a-f]{6,8}$/i.test(String(value).trim());
+      }
+
+      function normalizeColor(value) {
+        // The 3MF writes #RRGGBB, a tray reports RRGGBBAA, FilaMan stores
+        // #rrggbb. Six hex digits are what they have in common.
+        if (!value) return '';
+        var hex = String(value).replace('#', '').toLowerCase();
+        return hex.length >= 6 ? hex.slice(0, 6) : hex;
+      }
+
+      function sameMaterial(a, b) {
+        return Boolean(a) && Boolean(b) && String(a).trim().toUpperCase() === String(b).trim().toUpperCase();
+      }
+
       function spoolName(spoolId) {
         if (spoolId === null || spoolId === undefined) return t('history.unassigned');
-        return spools.get(spoolId) || '#' + spoolId;
+        var spool = spools.get(spoolId);
+        return spool ? spool.label : '#' + spoolId;
       }
 
       /* ── history ─────────────────────────────────────────────── */
@@ -665,7 +700,7 @@
           wrapper.appendChild(el('div', 'print-preview'));
         }
 
-        var body = el('div');
+        var body = el('div', 'print-body');
         body.appendChild(el('div', 'print-title', record.file_name));
 
         var meta = el('div', 'print-meta');
@@ -702,7 +737,11 @@
         }
 
         body.appendChild(meta);
-        body.appendChild(filamentTable(record));
+
+        var scroll = el('div', 'filament-scroll');
+        scroll.appendChild(filamentTable(record));
+        body.appendChild(scroll);
+
         wrapper.appendChild(body);
         return wrapper;
       }
@@ -778,15 +817,7 @@
         var cell = el('td');
         var actions = el('div', 'row-actions');
 
-        var choice = el('select');
-        var placeholder = el('option', null, t('history.chooseSpool'));
-        placeholder.value = '';
-        choice.appendChild(placeholder);
-        spools.forEach(function (label, spoolId) {
-          var option = el('option', null, label);
-          option.value = String(spoolId);
-          choice.appendChild(option);
-        });
+        var choice = spoolSelect(usage);
         actions.appendChild(choice);
 
         var bookLabel = el('label', 'check');
@@ -810,6 +841,62 @@
 
         cell.appendChild(actions);
         return cell;
+      }
+
+      function spoolSelect(usage) {
+        // Grouped rather than filtered: with a few hundred spools the right one
+        // has to be at the top, but hiding the rest would be a decision this
+        // page is not entitled to make.
+        var choice = el('select');
+        var placeholder = el('option', null, t('history.chooseSpool'));
+        placeholder.value = '';
+        choice.appendChild(placeholder);
+
+        var wanted = normalizeColor(usage.color_hex);
+        var matching = [];
+        var material = [];
+        var other = [];
+
+        spools.forEach(function (spool, spoolId) {
+          var entry = { id: spoolId, spool: spool };
+          if (!sameMaterial(spool.material, usage.material)) {
+            other.push(entry);
+          } else if (wanted && spool.color === wanted) {
+            matching.push(entry);
+          } else {
+            material.push(entry);
+          }
+        });
+
+        addGroup(choice, t('history.groupMatching'), matching);
+        addGroup(choice, t('history.groupSameMaterial'), material);
+        addGroup(choice, t('history.groupOther'), other);
+
+        // Exactly one spool of the right material and colour: offer it. The
+        // human still has to press the button, so this is a suggestion and not
+        // the guess the booking rules forbid.
+        if (matching.length === 1) choice.value = String(matching[0].id);
+
+        return choice;
+      }
+
+      function addGroup(choice, caption, entries) {
+        if (!entries.length) return;
+
+        var group = document.createElement('optgroup');
+        group.label = caption;
+
+        // An empty spool goes last rather than away: a remaining weight can be
+        // out of date, and hiding it would decide for the reader.
+        entries.slice().sort(function (a, b) {
+          return (b.spool.remaining || 0) - (a.spool.remaining || 0);
+        }).forEach(function (entry) {
+          var option = el('option', null, entry.spool.label);
+          option.value = String(entry.id);
+          group.appendChild(option);
+        });
+
+        choice.appendChild(group);
       }
 
       function correctionCell(usage) {
