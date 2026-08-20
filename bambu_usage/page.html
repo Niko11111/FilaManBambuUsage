@@ -529,6 +529,16 @@
       font-weight: 600;
     }
     .picker-wanted { color: var(--text-muted); font-size: 0.85rem; }
+    .picker-needs {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    /* Beside the spool name on the card, and under it in the list. */
+    .filament-spool .badge, .picker-text .badge { margin-left: 8px; font-size: 0.72rem; }
     .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
     .chip {
       font-family: inherit;
@@ -711,6 +721,13 @@
       var EXTERNAL_SLOT_INDEX = '255-254';
       var SAVED_VISIBLE_MS = 2500;
       var SEARCH_DELAY_MS = 300;
+      // Below this much headroom a spool is called tight. Enough that a spool
+      // with a little more than the print needs still gets a second look.
+      var TIGHT_MARGIN = 1.15;
+
+      // Written out rather than assembled from the level, so every key stays
+      // visible to the test that checks the page against the dictionaries.
+      var WARNING_KEYS = { tooLittle: 'picker.tooLittle', tight: 'picker.tight' };
 
       // Written out rather than built from the status string, so every key is
       // visible to the test that checks the dictionaries against the page.
@@ -1580,6 +1597,12 @@
         var named = el('div', 'filament-spool');
         named.appendChild(link(spoolName(usage.spool_id),
           assigned ? '/spools/' + usage.spool_id : null));
+
+        // Said here as well as in the picker, because this is where somebody
+        // sees it without opening anything, and seeing it early is the point.
+        var spool = assigned ? spools.get(usage.spool_id) : null;
+        var level = spool ? spoolWarning(usage, spool.remaining, isRunning) : null;
+        if (level) named.appendChild(warningBadge(level));
         text.appendChild(named);
 
         text.appendChild(el('div', 'filament-figures', filamentFigures(usage)));
@@ -1609,6 +1632,38 @@
           })));
         }
         return what;
+      }
+
+      function stillNeeded(usage) {
+        // What the print has left to lay down of this filament. During a print
+        // that is the honest figure, and it is the moment somebody would swap a
+        // spool; afterwards it is simply the estimate.
+        if (usage.estimated_grams === null || usage.estimated_grams === undefined) return null;
+
+        var done = usage.used_so_far === null || usage.used_so_far === undefined
+          ? 0 : usage.used_so_far;
+        return Math.max(usage.estimated_grams - done, 0);
+      }
+
+      function spoolWarning(usage, remaining, isRunning) {
+        // Only while the print runs. On a finished one there is nothing left to
+        // intervene in, and a warning nobody can act on is noise.
+        if (!isRunning) return null;
+        // Nothing is claimed about a spool without a weight, and nothing is
+        // said about one that is plainly enough. Silence is the good case.
+        if (remaining === null || remaining === undefined) return null;
+
+        var needed = stillNeeded(usage);
+        if (needed === null || needed <= 0) return null;
+
+        if (remaining < needed) return 'tooLittle';
+        return remaining < needed * TIGHT_MARGIN ? 'tight' : null;
+      }
+
+      function warningBadge(level) {
+        var badge = el('span', 'badge ' + (level === 'tooLittle' ? 'bad' : 'open'),
+          t(WARNING_KEYS[level]));
+        return withIcon(badge, 'warning');
       }
 
       function filamentFigures(usage) {
@@ -1723,7 +1778,30 @@
           material: usage.material || '-',
           slot: usage.slot_index || '-'
         })));
+
+        var needs = neededLine(usage);
+        if (needs) head.appendChild(withIcon(el('div', 'picker-needs', needs), 'weight'));
         return head;
+      }
+
+      function neededLine(usage) {
+        // What this row costs, so the spool below can be judged against it
+        // rather than guessed at.
+        if (usage.estimated_grams === null || usage.estimated_grams === undefined) return null;
+
+        var line = usage.estimated_length_m
+          ? t('picker.needsWithLength', {
+              grams: grams(usage.estimated_grams),
+              metres: usage.estimated_length_m.toFixed(1)
+            })
+          : t('picker.needs', { grams: grams(usage.estimated_grams) });
+
+        // Only while something has been laid down and nothing booked yet, which
+        // is exactly the running print.
+        if (usage.used_so_far) {
+          line += ' · ' + t('picker.printed', { grams: grams(usage.used_so_far) });
+        }
+        return line;
       }
 
       function pickerChips(state, changed) {
@@ -1838,6 +1916,9 @@
           '#' + entry.id + '  ' + entry.spool.material + (entry.spool.maker ? ' · ' + entry.spool.maker : '')));
         text.appendChild(el('div', 'picker-detail',
           entry.spool.designation + ' · ' + grams(entry.spool.remaining)));
+
+        var level = spoolWarning(usage, entry.spool.remaining, state.running);
+        if (level) text.appendChild(warningBadge(level));
         // Which one the row sits on now, so nobody hunts for it in the list.
         if (entry.id === usage.spool_id) {
           text.appendChild(el('span', 'badge', t('picker.current')));

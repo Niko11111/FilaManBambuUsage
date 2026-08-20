@@ -80,6 +80,7 @@ async def get_history(
                 material=row.material,
                 color_hex=row.color_hex,
                 estimated_grams=row.estimated_grams,
+                estimated_length_m=row.estimated_length_m,
                 spent_grams=row.spent_grams,
                 spent_at=row.spent_at,
                 manual_override=bool(row.manual_override),

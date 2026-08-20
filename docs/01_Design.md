@@ -364,7 +364,16 @@ so far grows with it; the finished list below is left alone and keeps however
 much of it is unfolded.
 
 A block whose spool is still open is highlighted, because that is the only thing
-the page ever asks of a human. Everything that can be changed about one filament
+the page ever asks of a human.
+
+**While a print runs, the page says whether the spool will last.** The editor
+names what the row costs, in grams and in metres, and beside every spool in the
+list stands "not enough left" or "cutting it close" where its remaining weight
+does not cover what is still to be laid down (the estimate minus what is already
+down, not the whole print). The same marker sits on the card beside the spool
+name, because that is where somebody sees it without opening anything, and
+seeing it early is the entire point. On a finished print neither appears: a
+warning nobody can act on is noise. Everything that can be changed about one filament
 sits behind the pencil on its block and opens one window: the booked amount, and
 the spool, chosen from a filtered list with colour and remaining weight rather
 than from a dropdown. Changing the spool of a filament that was already booked

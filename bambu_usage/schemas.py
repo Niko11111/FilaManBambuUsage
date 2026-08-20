@@ -69,6 +69,9 @@ class FilamentUsage(BaseModel):
     manual_override: bool = False
     # Which part of the print this row covers, when a spool was swapped during
     # it. Both None means the whole print, which is the normal case.
+    # How much filament the slicer wanted, as a length. Only ever shown, never
+    # booked: the plugin keeps its books in grams.
+    estimated_length_m: float | None = None
     # What the print had laid down of this filament by the layer it is on now.
     # Only filled while it runs, and never booked from here.
     used_so_far: float | None = None

@@ -88,7 +88,12 @@
     "sortUsed": "Zuletzt benutzt",
     "assign": "Zuordnen",
     "none": "Keine Spule passt zu diesem Filter",
-    "current": "aktuell zugeordnet"
+    "current": "aktuell zugeordnet",
+    "needs": "braucht {grams}",
+    "needsWithLength": "braucht {grams} (~{metres} m)",
+    "printed": "{grams} gedruckt",
+    "tooLittle": "reicht nicht",
+    "tight": "wird knapp"
   },
   "printStatus": {
     "running": "läuft",

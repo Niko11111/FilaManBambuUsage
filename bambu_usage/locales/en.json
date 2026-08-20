@@ -88,7 +88,12 @@
     "sortUsed": "Last used",
     "assign": "Assign",
     "none": "No spool matches this filter",
-    "current": "in use now"
+    "current": "in use now",
+    "needs": "needs {grams}",
+    "needsWithLength": "needs {grams} (~{metres} m)",
+    "printed": "{grams} printed",
+    "tooLittle": "not enough left",
+    "tight": "cutting it close"
   },
   "printStatus": {
     "running": "running",
