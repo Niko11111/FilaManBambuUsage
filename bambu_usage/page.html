@@ -335,6 +335,57 @@
 
     .print-preview { cursor: zoom-in; }
 
+    .picker { min-width: min(620px, 78vw); }
+    .picker-head { margin-bottom: 12px; }
+    .picker-title {
+      font-family: var(--font-serif);
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+    .picker-wanted { color: var(--text-muted); font-size: 0.85rem; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    .chip {
+      font-family: inherit;
+      font-size: 0.8rem;
+      padding: 3px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .chip.on { border-color: var(--accent); color: var(--accent); }
+    .picker-tools {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .picker-tools input[type="text"] { flex: 1; min-width: 160px; }
+    .picker-list {
+      max-height: 52vh;
+      overflow: auto;
+      border-top: 1px solid var(--border);
+    }
+    .picker-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 2px;
+      border-bottom: 1px solid var(--border);
+    }
+    .picker-color {
+      width: 10px;
+      height: 36px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      flex: none;
+    }
+    .picker-text { flex: 1; min-width: 0; }
+    .picker-name { font-weight: 600; font-size: 0.9rem; }
+    .picker-detail { color: var(--text-muted); font-size: 0.82rem; }
+
     footer { color: var(--text-muted); font-size: 0.8rem; text-align: center; margin-top: 32px; }
 
     @media (max-width: 620px) {
@@ -698,7 +749,10 @@
               label: spoolLabel(spool),
               material: filament.material_type || '',
               color: normalizeColor(colors.length && colors[0].color ? colors[0].color.hex_code : ''),
-              remaining: spool.remaining_weight_g
+              maker: filament.manufacturer ? filament.manufacturer.name : '',
+              designation: filament.designation || '',
+              remaining: spool.remaining_weight_g,
+              lastUsed: spool.last_used_at
             });
           });
           var seen = page * SPOOL_PAGE_SIZE;
@@ -987,88 +1041,185 @@
 
       function assignmentCell(usage) {
         var cell = el('td');
-        var actions = el('div', 'row-actions');
-
-        var choice = spoolSelect(usage);
-        actions.appendChild(choice);
-
-        var bookLabel = el('label', 'check');
-        var bookNow = el('input');
-        bookNow.type = 'checkbox';
-        bookNow.checked = true;
-        bookLabel.appendChild(bookNow);
-        bookLabel.appendChild(el('span', null, t('history.bookNow')));
-        actions.appendChild(bookLabel);
 
         var button = el('button', 'button', t('history.assign'));
         button.type = 'button';
         button.addEventListener('click', function () {
-          if (!choice.value) return;
-          act(button, write(ADMIN + '/filament/' + usage.id + '/assign', {
-            spool_id: Number(choice.value),
-            spend_now: bookNow.checked
-          }));
+          openSpoolPicker(usage);
         });
-        actions.appendChild(button);
 
-        cell.appendChild(actions);
+        cell.appendChild(button);
         return cell;
       }
 
-      function spoolSelect(usage) {
-        // Grouped rather than filtered: with a few hundred spools the right one
-        // has to be at the top, but hiding the rest would be a decision this
-        // page is not entitled to make.
-        var choice = el('select');
-        var placeholder = el('option', null, t('history.chooseSpool'));
-        placeholder.value = '';
-        choice.appendChild(placeholder);
+      function openSpoolPicker(usage) {
+        // A window rather than a dropdown: with a few hundred spools the
+        // question "which one of these was in the tray" needs colour, remaining
+        // weight and a way to narrow the list, and none of that fits in an
+        // option element.
+        var state = {
+          material: usage.material || '',
+          query: '',
+          order: 'match',
+          bookNow: true
+        };
 
-        var wanted = normalizeColor(usage.color_hex);
-        var matching = [];
-        var material = [];
-        var other = [];
+        var box = el('div', 'picker');
+        var list = el('div', 'picker-list');
 
-        spools.forEach(function (spool, spoolId) {
-          var entry = { id: spoolId, spool: spool };
-          if (!sameMaterial(spool.material, usage.material)) {
-            other.push(entry);
-          } else if (wanted && spool.color === wanted) {
-            matching.push(entry);
-          } else {
-            material.push(entry);
+        box.appendChild(pickerHead(usage));
+        box.appendChild(pickerChips(state, function () { fill(); }));
+        box.appendChild(pickerTools(state, function () { fill(); }));
+        box.appendChild(list);
+
+        function fill() {
+          list.textContent = '';
+          var entries = pickerEntries(usage, state);
+
+          if (!entries.length) {
+            list.appendChild(el('p', 'picker-detail', t('picker.none')));
+            return;
           }
-        });
+          entries.forEach(function (entry) {
+            list.appendChild(pickerRow(usage, entry, state));
+          });
+        }
 
-        addGroup(choice, t('history.groupMatching'), matching);
-        addGroup(choice, t('history.groupSameMaterial'), material);
-        addGroup(choice, t('history.groupOther'), other);
-
-        // Exactly one spool of the right material and colour: offer it. The
-        // human still has to press the button, so this is a suggestion and not
-        // the guess the booking rules forbid.
-        if (matching.length === 1) choice.value = String(matching[0].id);
-
-        return choice;
+        fill();
+        openOverlay(box);
       }
 
-      function addGroup(choice, caption, entries) {
-        if (!entries.length) return;
+      function pickerHead(usage) {
+        var head = el('div', 'picker-head');
+        head.appendChild(el('div', 'picker-title', t('picker.heading')));
+        head.appendChild(el('div', 'picker-wanted', t('picker.wanted', {
+          material: usage.material || '-',
+          slot: usage.slot_index || '-'
+        })));
+        return head;
+      }
 
-        var group = document.createElement('optgroup');
-        group.label = caption;
+      function pickerChips(state, changed) {
+        var chips = el('div', 'chips');
+        var materials = [];
 
-        // An empty spool goes last rather than away: a remaining weight can be
-        // out of date, and hiding it would decide for the reader.
-        entries.slice().sort(function (a, b) {
-          return (b.spool.remaining || 0) - (a.spool.remaining || 0);
-        }).forEach(function (entry) {
-          var option = el('option', null, entry.spool.label);
-          option.value = String(entry.id);
-          group.appendChild(option);
+        spools.forEach(function (spool) {
+          if (spool.material && materials.indexOf(spool.material) < 0) materials.push(spool.material);
+        });
+        materials.sort();
+
+        [''].concat(materials).forEach(function (material) {
+          var chip = el('button', 'chip', material || t('picker.all'));
+          chip.type = 'button';
+          if (sameMaterial(material, state.material) || (!material && !state.material)) {
+            chip.classList.add('on');
+          }
+          chip.addEventListener('click', function () {
+            state.material = material;
+            chips.querySelectorAll('.chip').forEach(function (other) {
+              other.classList.remove('on');
+            });
+            chip.classList.add('on');
+            changed();
+          });
+          chips.appendChild(chip);
         });
 
-        choice.appendChild(group);
+        return chips;
+      }
+
+      function pickerTools(state, changed) {
+        var tools = el('div', 'picker-tools');
+
+        var search = el('input');
+        search.type = 'text';
+        search.placeholder = t('picker.search');
+        search.addEventListener('input', function () {
+          state.query = search.value;
+          changed();
+        });
+        tools.appendChild(search);
+
+        var order = el('select');
+        [['match', 'picker.sortMatch'], ['remaining', 'picker.sortRemaining'], ['used', 'picker.sortUsed']]
+          .forEach(function (pair) {
+            var option = el('option', null, t(pair[1]));
+            option.value = pair[0];
+            order.appendChild(option);
+          });
+        order.addEventListener('change', function () {
+          state.order = order.value;
+          changed();
+        });
+        tools.appendChild(order);
+
+        var bookLabel = el('label', 'check');
+        var bookNow = el('input');
+        bookNow.type = 'checkbox';
+        bookNow.checked = state.bookNow;
+        bookNow.addEventListener('change', function () { state.bookNow = bookNow.checked; });
+        bookLabel.appendChild(bookNow);
+        bookLabel.appendChild(el('span', null, t('history.bookNow')));
+        tools.appendChild(bookLabel);
+
+        return tools;
+      }
+
+      function pickerEntries(usage, state) {
+        var wanted = normalizeColor(usage.color_hex);
+        var query = state.query.trim().toLowerCase();
+        var entries = [];
+
+        spools.forEach(function (spool, spoolId) {
+          if (state.material && !sameMaterial(spool.material, state.material)) return;
+          if (query && spool.label.toLowerCase().indexOf(query) < 0) return;
+          entries.push({
+            id: spoolId,
+            spool: spool,
+            matches: Boolean(wanted) && spool.color === wanted
+          });
+        });
+
+        return entries.sort(function (a, b) {
+          if (state.order === 'used') return usedAt(b.spool) - usedAt(a.spool);
+          if (state.order === 'remaining') return (b.spool.remaining || 0) - (a.spool.remaining || 0);
+          // The colour the slicer asked for comes first, and an empty spool is
+          // rarely the answer, so it sinks without disappearing.
+          if (a.matches !== b.matches) return a.matches ? -1 : 1;
+          return (b.spool.remaining || 0) - (a.spool.remaining || 0);
+        });
+      }
+
+      function usedAt(spool) {
+        return spool.lastUsed ? new Date(spool.lastUsed).getTime() : 0;
+      }
+
+      function pickerRow(usage, entry, state) {
+        var row = el('div', 'picker-row');
+
+        var swatch = el('div', 'picker-color');
+        if (entry.spool.color) swatch.style.background = '#' + entry.spool.color;
+        row.appendChild(swatch);
+
+        var text = el('div', 'picker-text');
+        text.appendChild(el('div', 'picker-name',
+          '#' + entry.id + '  ' + entry.spool.material + (entry.spool.maker ? ' · ' + entry.spool.maker : '')));
+        text.appendChild(el('div', 'picker-detail',
+          entry.spool.designation + ' · ' + grams(entry.spool.remaining)));
+        row.appendChild(text);
+
+        var button = el('button', 'button', t('picker.assign'));
+        button.type = 'button';
+        button.addEventListener('click', function () {
+          closeOverlay();
+          act(button, write(ADMIN + '/filament/' + usage.id + '/assign', {
+            spool_id: entry.id,
+            spend_now: state.bookNow
+          }));
+        });
+        row.appendChild(button);
+
+        return row;
       }
 
       function correctionCell(usage) {

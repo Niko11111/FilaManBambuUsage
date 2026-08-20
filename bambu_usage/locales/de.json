@@ -38,10 +38,6 @@
     "cost": "{amount} {currency}",
     "spool": "Spule",
     "unassigned": "nicht zugeordnet",
-    "chooseSpool": "Spule auswählen",
-    "groupMatching": "Material und Farbe passen",
-    "groupSameMaterial": "Gleiches Material",
-    "groupOther": "Alle übrigen",
     "assign": "Zuordnen",
     "bookNow": "gleich buchen",
     "book": "Diesen Druck buchen",
@@ -49,6 +45,17 @@
     "corrected": "von Hand korrigiert",
     "stoppedAt": "bei {percent}% abgebrochen",
     "notBooked": "nicht gebucht"
+  },
+  "picker": {
+    "heading": "Spule zuordnen",
+    "wanted": "Slot {slot}, der Slicer wollte {material}",
+    "all": "Alle",
+    "search": "Suchen",
+    "sortMatch": "Passende zuerst",
+    "sortRemaining": "Meiste Restmenge",
+    "sortUsed": "Zuletzt benutzt",
+    "assign": "Zuordnen",
+    "none": "Keine Spule passt zu diesem Filter"
   },
   "printStatus": {
     "running": "läuft",

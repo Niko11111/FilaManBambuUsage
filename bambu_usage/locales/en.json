@@ -38,10 +38,6 @@
     "cost": "{amount} {currency}",
     "spool": "Spool",
     "unassigned": "not assigned",
-    "chooseSpool": "Choose a spool",
-    "groupMatching": "Matching material and colour",
-    "groupSameMaterial": "Same material",
-    "groupOther": "Everything else",
     "assign": "Assign",
     "bookNow": "book right away",
     "book": "Book this print",
@@ -49,6 +45,17 @@
     "corrected": "corrected by hand",
     "stoppedAt": "stopped at {percent}%",
     "notBooked": "not booked"
+  },
+  "picker": {
+    "heading": "Assign a spool",
+    "wanted": "Slot {slot}, the slicer asked for {material}",
+    "all": "All",
+    "search": "Search",
+    "sortMatch": "Best match first",
+    "sortRemaining": "Most left",
+    "sortUsed": "Last used",
+    "assign": "Assign",
+    "none": "No spool matches this filter"
   },
   "printStatus": {
     "running": "running",
