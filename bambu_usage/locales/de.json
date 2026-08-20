@@ -32,7 +32,7 @@
     "filament": "Filament",
     "slot": "Slot",
     "external": "externe Spule",
-    "span": "{from}% bis {to}% des Drucks",
+    "span": "{from}% bis {to}% dieses Filaments",
     "estimated": "Geschätzt",
     "booked": "Gebucht",
     "cost": "{amount} {currency}",

@@ -221,6 +221,44 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row.estimated_grams for row in rows], [41.2, 12.5])
         self.assertEqual([row.spent_grams for row in rows], [20.6, 6.25])
 
+    async def test_an_abort_books_what_the_gcode_says_not_what_the_layers_suggest(self):
+        # Filament 2 is only laid down in the last layer. Stopping at layer two
+        # of three costs none of it, while the linear share would have charged
+        # two thirds. This is the difference the plate gcode is read for.
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        metadata = self.two_filaments()
+        metadata.layer_shares = {1: [0.5, 0.8, 1.0], 2: [0.0, 0.0, 1.0]}
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1], metadata=metadata)
+            await service.finish_print(
+                db,
+                print_id,
+                models.STATUS_FAILED,
+                AUTO_WITH_CANCEL,
+                NOW,
+                completed_fraction=0.66,
+                stopped_at_layer=2,
+            )
+
+        # 80 per cent of 41.2 for the one, nothing at all for the other.
+        self.assertEqual(self.consumptions, [(7, 32.96, "cube.3mf")])
+
+    async def test_without_a_curve_the_linear_share_still_applies(self):
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            await service.finish_print(
+                db, print_id, models.STATUS_FAILED, AUTO_WITH_CANCEL, NOW,
+                completed_fraction=0.5, stopped_at_layer=2,
+            )
+
+        self.assertEqual(sorted(self.consumptions), [(7, 20.6, "cube.3mf"), (8, 6.25, "cube.3mf")])
+
     async def test_an_abort_without_a_known_share_books_nothing(self):
         # A printer that never reported its progress leaves us guessing, and a
         # guess on a spool is worse than a row somebody can correct by hand.

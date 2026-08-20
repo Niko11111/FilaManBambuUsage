@@ -328,6 +328,7 @@ class PrinterListener:
                 config,
                 at,
                 completed_fraction=completed_fraction(self.state),
+                stopped_at_layer=layer_of(self.state),
             )
 
         logger.info("printer %s: print %s ended as %s", self.printer_id, print_id, status)
@@ -367,11 +368,15 @@ class PrinterListener:
                 return
         self.last_assignment_check = at
 
-        from . import filaman, service, store
+        from . import filaman, rules, service, store
 
         fraction = completed_fraction(self.state)
+        layer = layer_of(self.state)
 
         async with self.sessions() as db:
+            record = await store.get_print(db, self.current_print_id)
+            curves = store.decode_layer_shares(record.layer_shares) if record else {}
+
             for row in await store.list_filaments(db, self.current_print_id):
                 if row.slot_index is None or row.spent_at is not None:
                     continue
@@ -395,7 +400,12 @@ class PrinterListener:
                     )
                     continue
 
-                if fraction is None:
+                # What the print had laid down of this filament, from the
+                # gcode where there is a curve and linearly otherwise.
+                exact = rules.share_at_layer(curves.get(int(row.filament_id)), layer)
+                at = fraction if exact is None else exact
+
+                if at is None:
                     logger.warning(
                         "printer %s: slot %s changed from spool %s to %s, but the progress "
                         "is unknown, so nothing was split",
@@ -406,14 +416,14 @@ class PrinterListener:
                     )
                     continue
 
-                if await service.split_filament_row(db, int(row.id), fraction, current):
+                if await service.split_filament_row(db, int(row.id), at, current):
                     logger.info(
-                        "printer %s: slot %s changed from spool %s to %s at %.0f%% of the print",
+                        "printer %s: slot %s changed from spool %s to %s at %.0f%% of its filament",
                         self.printer_id,
                         row.slot_index,
                         row.spool_id,
                         current,
-                        fraction * 100,
+                        at * 100,
                     )
 
     async def publish_status(self) -> None:

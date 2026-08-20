@@ -157,6 +157,8 @@ One print job.
 | `finished_at` | datetime, nullable | |
 | `status` | str | `running`, `finished`, `failed`, `cancelled`, `incomplete`, `no_3mf` |
 | `completed_fraction` | float, nullable | how far a print that was stopped got, `0.0` to `1.0`. `NULL` means unknown, and then nothing is booked |
+| `layer_shares` | text, nullable | JSON, per filament the share of its material each layer has used. The shape of the curve out of the plate gcode, never an amount, see `03_Bambu_Data_Sources.md` |
+| `stopped_at_layer` | int, nullable | which layer the printer was on when it stopped, so the curve can be read at the right place long afterwards |
 | `spent` | bool | whether it has already been deducted |
 | `thumbnail` | blob, nullable | `Metadata/plate_<N>.png` |
 | `thumbnail_mime` | str, nullable | in practice `image/png` |

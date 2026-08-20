@@ -135,6 +135,9 @@ class PrintMetadata:
     filaments: list[FilamentInfo] = field(default_factory=list)
     thumbnail: bytes | None = None
     thumbnail_mime: str | None = None
+    # Per filament, the share of its material each layer has used. Empty when
+    # the plate gcode is missing or unreadable, and every caller copes with that.
+    layer_shares: dict[int, list[float]] = field(default_factory=dict)
     # Filament order parsed from the plate gcode. Stage 3 only, empty until then.
     filament_order: dict[int, int] = field(default_factory=dict)
 
@@ -252,7 +255,7 @@ def parse(archive: Path) -> PrintMetadata:
 
 
 def _read_metadata(bundle: zipfile.ZipFile) -> PrintMetadata:
-    """Pull plate, filaments and preview out of an open archive."""
+    """Pull plate, filaments, preview and layer curves out of an open archive."""
     plate_id, filaments = _read_slice_info(bundle)
     thumbnail = _read_thumbnail(bundle, plate_id)
 
@@ -261,6 +264,7 @@ def _read_metadata(bundle: zipfile.ZipFile) -> PrintMetadata:
         filaments=filaments,
         thumbnail=thumbnail,
         thumbnail_mime=THUMBNAIL_MIME if thumbnail else None,
+        layer_shares={} if plate_id is None else _read_layer_shares(bundle, plate_id),
     )
 
 
@@ -394,22 +398,33 @@ def parse_layer_shares(archive: Path, plate_id: int) -> dict[int, list[float]]:
     Returns shares between 0 and 1, one entry per layer, keyed by the 1-based
     filament id the slicer uses. An empty result means the question could not be
     answered, and every caller has to cope with that.
-    """
-    name = PLATE_GCODE_TEMPLATE.format(plate_id=plate_id)
 
+    ``parse`` reads the same thing out of an archive it already has open. This
+    is the way in for a file on disk, which is what tools/check_gcode.py uses.
+    """
     try:
         with zipfile.ZipFile(archive) as bundle:
-            if name not in bundle.namelist():
-                logger.warning("3MF carries no %s, no layer shares available", name)
-                return {}
-
-            with bundle.open(name) as entry:
-                # Line by line out of the open entry. A plate gcode runs to tens
-                # of megabytes and must never be read into memory as a whole.
-                text = io.TextIOWrapper(entry, encoding="utf-8", errors="replace")
-                return layer_shares(text)
+            return _read_layer_shares(bundle, plate_id)
     except (OSError, zipfile.BadZipFile) as exc:
         raise ThreeMFError(f"'{archive.name}' could not be read for layer shares: {exc}") from exc
+
+
+def _read_layer_shares(bundle: zipfile.ZipFile, plate_id: int) -> dict[int, list[float]]:
+    """Read the layer curves out of an archive that is already open."""
+    name = PLATE_GCODE_TEMPLATE.format(plate_id=plate_id)
+
+    if name not in bundle.namelist():
+        logger.warning("3MF carries no %s, no layer shares available", name)
+        return {}
+
+    try:
+        with bundle.open(name) as entry:
+            # Line by line out of the open entry. A plate gcode runs to tens of
+            # megabytes and must never be read into memory as a whole.
+            return layer_shares(io.TextIOWrapper(entry, encoding="utf-8", errors="replace"))
+    except (OSError, zipfile.BadZipFile) as exc:
+        logger.warning("could not read %s out of the 3MF: %s", name, exc)
+        return {}
 
 
 def layer_shares(lines: Iterable[str]) -> dict[int, list[float]]:

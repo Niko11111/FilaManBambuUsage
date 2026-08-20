@@ -141,6 +141,23 @@ def split_share(
     return (at - start) / (end - start)
 
 
+def share_at_layer(curve: list[float] | None, layer: int | None) -> float | None:
+    """How much of a filament had been used once *layer* was done.
+
+    The curve comes out of the plate gcode and says what the print really laid
+    down, which is not the same as how far through the layers it got: a
+    filament used only in the last third sits at zero for two thirds of them.
+    That difference is the whole reason the gcode is read at all.
+
+    None where there is no curve or no layer, and the caller then falls back
+    to the linear share.
+    """
+    if not curve or layer is None or layer < 1:
+        return None
+
+    return curve[min(layer, len(curve)) - 1]
+
+
 def booking_factor(*, was_stopped: bool, completed_fraction: float | None) -> float:
     """What share of the estimate a print costs.
 

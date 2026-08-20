@@ -18,6 +18,8 @@ bambulabs_api or fastapi. Enforced by tools/check_architecture.py.
 
 from __future__ import annotations
 
+import json
+import logging
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -28,6 +30,8 @@ from .models import OPEN_STATUSES, filament_table, printer_status_table, prints_
 if TYPE_CHECKING:  # imported for annotations only
     from datetime import datetime
     from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -63,6 +67,7 @@ async def create_print(
     thumbnail: bytes | None = None,
     thumbnail_mime: str | None = None,
     error: str | None = None,
+    layer_shares: dict[int, list[float]] | None = None,
 ) -> int:
     """Insert one print and return its id.
 
@@ -82,9 +87,29 @@ async def create_print(
             thumbnail=thumbnail,
             thumbnail_mime=thumbnail_mime,
             error=error,
+            layer_shares=json.dumps(layer_shares) if layer_shares else None,
         )
     )
     return int(result.inserted_primary_key[0])
+
+
+def decode_layer_shares(value: str | None) -> dict[int, list[float]]:
+    """Read the stored curves back, keyed by filament id again.
+
+    JSON has no integer keys, so they come back as text and are turned back.
+    Anything unreadable is nothing rather than half a table: the booking then
+    falls back to the linear share, which is what happened before there were
+    curves at all.
+    """
+    if not value:
+        return {}
+
+    try:
+        raw = json.loads(value)
+        return {int(key): [float(share) for share in curve] for key, curve in raw.items()}
+    except (TypeError, ValueError, AttributeError) as exc:
+        logger.warning("stored layer shares are not readable: %s", exc)
+        return {}
 
 
 async def add_filament_rows(db: AsyncSession, print_id: int, rows: list[FilamentRow]) -> None:
@@ -227,6 +252,7 @@ async def set_print_status(
     finished_at: datetime | None = None,
     error: str | None = None,
     completed_fraction: float | None = None,
+    stopped_at_layer: int | None = None,
 ) -> None:
     """Move a print to *status*, optionally recording when and why it ended.
 
@@ -241,6 +267,8 @@ async def set_print_status(
         values["error"] = error
     if completed_fraction is not None:
         values["completed_fraction"] = completed_fraction
+    if stopped_at_layer is not None:
+        values["stopped_at_layer"] = stopped_at_layer
 
     await db.execute(update(prints_table).where(prints_table.c.id == print_id).values(**values))
 

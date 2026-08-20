@@ -14,6 +14,7 @@ from bambu_usage.rules import (
     EXTERNAL_SLOT_INDEX,
     booking_factor,
     print_cost,
+    share_at_layer,
     EXTERNAL_SPOOL_AMS_ID,
     EXTERNAL_SPOOL_TRAY_ID,
     TRAYS_PER_AMS,
@@ -223,6 +224,31 @@ class PrintCostTest(unittest.TestCase):
 
     def test_a_row_without_an_amount(self):
         self.assertIsNone(print_cost([usage(7)], self.PRICES))
+
+
+class ShareAtLayerTest(unittest.TestCase):
+    """Reading a filament's curve at the layer a print stopped on."""
+
+    CURVE = [0.0, 0.0, 0.4, 1.0]
+
+    def test_the_layer_that_was_reached(self):
+        self.assertEqual(share_at_layer(self.CURVE, 3), 0.4)
+
+    def test_a_filament_not_used_yet(self):
+        # The case the whole exercise is for: two layers in, this filament has
+        # had nothing, while the linear share would already charge half of it.
+        self.assertEqual(share_at_layer(self.CURVE, 2), 0.0)
+
+    def test_a_layer_past_the_end(self):
+        # A printer can report a layer beyond what the gcode has. All of it is
+        # the only sensible answer, and more than all of it is not one.
+        self.assertEqual(share_at_layer(self.CURVE, 99), 1.0)
+
+    def test_without_a_curve_or_a_layer(self):
+        self.assertIsNone(share_at_layer(None, 3))
+        self.assertIsNone(share_at_layer([], 3))
+        self.assertIsNone(share_at_layer(self.CURVE, None))
+        self.assertIsNone(share_at_layer(self.CURVE, 0))
 
 
 if __name__ == "__main__":

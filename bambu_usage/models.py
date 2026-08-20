@@ -37,6 +37,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    Text,
     UniqueConstraint,
     delete,
     func,
@@ -112,6 +113,13 @@ prints_table = Table(
     # None means it could not be determined, and then nothing is booked rather
     # than a number being invented.
     Column("completed_fraction", Float, nullable=True),
+    # Per filament, the share of its material each layer has used, as JSON.
+    # The shape of the curve read out of the plate gcode, not an amount; the
+    # amount stays the slicer's. See threemf.layer_shares.
+    Column("layer_shares", Text, nullable=True),
+    # Which layer the printer was on when the print stopped, so the curve can
+    # be read at the right place long after the fact.
+    Column("stopped_at_layer", Integer, nullable=True),
     Column("spent", Boolean, nullable=False, default=False),
     Column("thumbnail", LargeBinary, nullable=True),
     Column("thumbnail_mime", String(50), nullable=True),

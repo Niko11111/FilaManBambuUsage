@@ -123,6 +123,7 @@ async def start_print(
         plate_id=metadata.plate_id,
         thumbnail=metadata.thumbnail,
         thumbnail_mime=metadata.thumbnail_mime,
+        layer_shares=metadata.layer_shares,
     )
 
     await store.add_filament_rows(
@@ -176,6 +177,7 @@ async def finish_print(
     settings: PluginSettings,
     finished_at: datetime | None = None,
     completed_fraction: float | None = None,
+    stopped_at_layer: int | None = None,
 ) -> None:
     """Close a print and book it if the settings allow.
 
@@ -204,7 +206,12 @@ async def finish_print(
         return
 
     await store.set_print_status(
-        db, print_id, status, finished_at=moment, completed_fraction=completed_fraction
+        db,
+        print_id,
+        status,
+        finished_at=moment,
+        completed_fraction=completed_fraction,
+        stopped_at_layer=stopped_at_layer,
     )
     await db.commit()
 
@@ -241,14 +248,31 @@ async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
     if record is None:
         raise UsageError(f"print {print_id} does not exist")
 
-    factor = rules.booking_factor(
-        was_stopped=record.status in STOPPED_STATUSES,
+    was_stopped = record.status in STOPPED_STATUSES
+    linear = rules.booking_factor(
+        was_stopped=was_stopped,
         completed_fraction=record.completed_fraction,
     )
+    curves = store.decode_layer_shares(record.layer_shares)
+
+    def share_for(row: Any) -> float:
+        """What share of this filament the print had laid down when it stopped.
+
+        The curve out of the plate gcode where there is one, the linear share
+        of the layers otherwise. They differ most exactly where it matters: a
+        filament used only near the end sits at zero for most of the print.
+        """
+        if not was_stopped:
+            return 1.0
+
+        exact = rules.share_at_layer(curves.get(int(row.filament_id)), record.stopped_at_layer)
+        return linear if exact is None else exact
 
     rows = await store.list_filaments(db, print_id)
     pending = [row for row in rows if row.spool_id is not None and row.spent_at is None]
-    totals = rules.sum_grams_per_spool((row.spool_id, rules.share_of(row, factor)) for row in pending)
+    totals = rules.sum_grams_per_spool(
+        (row.spool_id, rules.share_of(row, share_for(row))) for row in pending
+    )
 
     moment = record.finished_at or datetime.now(timezone.utc)
     booked: dict[int, float] = {}
@@ -267,7 +291,9 @@ async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
             # A row without an amount is marked at zero rather than left open,
             # otherwise its print would never count as fully booked.
             for row in (r for r in pending if r.spool_id == spool_id):
-                await store.mark_filament_spent(db, row.id, rules.share_of(row, factor) or 0.0, moment)
+                await store.mark_filament_spent(
+                    db, row.id, rules.share_of(row, share_for(row)) or 0.0, moment
+                )
             await filaman.record_consumption(db, spool, grams, moment, record.file_name)
         except (SQLAlchemyError, filaman.FilaManUnavailableError) as exc:
             await db.rollback()

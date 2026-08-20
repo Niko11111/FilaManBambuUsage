@@ -32,7 +32,7 @@
     "filament": "Filament",
     "slot": "Slot",
     "external": "external spool",
-    "span": "{from}% to {to}% of the print",
+    "span": "{from}% to {to}% of this filament",
     "estimated": "Estimated",
     "booked": "Booked",
     "cost": "{amount} {currency}",

@@ -213,15 +213,20 @@ the plugin finds the open print again and can close it on the next `FINISH`.
 
 **An aborted print costs the share it got through.** Booking nothing leaves the
 spool wrong after every abort, and booking the full estimate is what OpenSpoolMan
-gets wrong. The share comes from `layer_num / total_layer_num`, falling back to
-`mc_percent`, and it is stored on the print so that booking it later by hand
-uses the same number.
+gets wrong.
 
-Both are approximations: a dense bottom layer weighs more than a sparse one in
-the middle, and `mc_percent` is progress in **time**, not in material. Layers are
-preferred for exactly that reason. The exact answer needs the cumulative
-extrusion per layer out of the plate gcode, and that is a later stage, see
-section 10.
+The share is read **per filament out of the plate gcode**: the 3MF is opened at
+print start, the gcode streamed, and for every layer the share of each filament's
+material that has been laid down by then is recorded. Stopping at layer 20 then
+costs exactly what layer 20 had used, and a filament that only appears in the
+last third costs nothing at all. See `03_Bambu_Data_Sources.md` for what the
+gcode looks like and why the curve is stored as shares rather than as amounts.
+
+Where there is no curve, because the gcode was missing or unreadable, the linear
+share falls back to `layer_num / total_layer_num` and then to `mc_percent`. Both
+are approximations, a dense bottom layer weighs more than a sparse one in the
+middle, and `mc_percent` measures time rather than material. Layers are preferred
+for exactly that reason.
 
 **A share that is unknown books nothing.** A printer that never reported its
 progress leaves the row open for a correction rather than getting a made up
@@ -253,8 +258,9 @@ A spool that runs empty is replaced, and from that moment the print draws from a
 different one. Charging either spool for the whole print is wrong in one
 direction or the other, and OpenSpoolMan cannot express the case at all.
 
-The share comes from the same progress figure an aborted print is booked at, so
-there is one notion of "how far did it get" and not two.
+The share comes from the same figure an aborted print is booked at, so there is
+one notion of "how far did it get" and not two: the filament's own curve out of
+the plate gcode where there is one, the linear share of the layers otherwise.
 
 **The split produces two rows, not a table of segments.** Everything downstream
 already works per row: the booking, the summing per spool, the correction by hand
@@ -374,10 +380,10 @@ assignment after the fact.
 **Stage 3.** Local prints: the filament change heuristic as a module that can be
 switched off, filament order from the plate gcode.
 
-**Stage 4, open.** Per layer tracking as the counterpart to
-`TRACK_LAYER_USAGE`: the cumulative extrusion per layer read out of the plate
-gcode, which turns the share an aborted print is booked at from an approximation
-into the exact amount up to the layer it stopped on.
+**Stage 4, done in part.** The cumulative extrusion per layer is read out of the
+plate gcode and used for the two bookings that need a share: an aborted print and
+a spool swapped mid print. What is still missing from the counterpart to
+`TRACK_LAYER_USAGE` is showing a running print what it has used so far.
 
 **Independently of all that**, three questions for Fire-Devils:
 
