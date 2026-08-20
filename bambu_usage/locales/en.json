@@ -3,7 +3,8 @@
     "title": "Bambu Usage Tracking",
     "subtitle": "Deducts the filament used by Bambu Lab prints from the matching FilaMan spools and keeps a print history with plate previews.",
     "back": "Back to FilaMan",
-    "footer": "FilaManBambuUsage, MIT. Consumption logic ported from OpenSpoolMan (MIT)."
+    "footer": "FilaManBambuUsage, MIT. Consumption logic ported from OpenSpoolMan (MIT).",
+    "close": "Close"
   },
   "status": {
     "heading": "Printers",
@@ -48,7 +49,9 @@
     "layers": "{count} layers",
     "timespan": "{from} to {to}",
     "edit": "Change the spool or the amount",
-    "usedSoFar": "{grams} so far"
+    "usedSoFar": "{grams} so far",
+    "durationHours": "{hours} h {minutes} min",
+    "durationMinutes": "{minutes} min"
   },
   "printType": {
     "cloud": "cloud print",

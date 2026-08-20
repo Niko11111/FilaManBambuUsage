@@ -3,7 +3,8 @@
     "title": "Bambu Usage Tracking",
     "subtitle": "Bucht das bei Bambu-Lab-Drucken verbrauchte Filament von den passenden FilaMan-Spulen ab und führt eine Druckhistorie mit Plate-Vorschau.",
     "back": "Zurück zu FilaMan",
-    "footer": "FilaManBambuUsage, MIT. Verbrauchslogik portiert von OpenSpoolMan (MIT)."
+    "footer": "FilaManBambuUsage, MIT. Verbrauchslogik portiert von OpenSpoolMan (MIT).",
+    "close": "Schließen"
   },
   "status": {
     "heading": "Drucker",
@@ -48,7 +49,9 @@
     "layers": "{count} Layer",
     "timespan": "{from} bis {to}",
     "edit": "Spule oder Menge ändern",
-    "usedSoFar": "bisher {grams}"
+    "usedSoFar": "bisher {grams}",
+    "durationHours": "{hours} h {minutes} min",
+    "durationMinutes": "{minutes} min"
   },
   "printType": {
     "cloud": "Cloud-Druck",

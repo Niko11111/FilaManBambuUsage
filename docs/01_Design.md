@@ -306,9 +306,9 @@ so the dictionaries ship inside the package. See section 9.
 
 **History** as the main view. One card per print: the preview image, the file
 name and the outcome as a badge, a line of facts underneath (printer, whether
-the job came from the cloud or from the printer itself, when it ran, how many
-layers), and then one block per filament with its colour, its slot, the spool it
-was booked against and the two weights.
+the job came from the cloud or from the printer itself, when it ran and for how
+long, how many layers), and then one block per filament with its colour, its
+slot, the spool it was booked against and the two weights.
 
 While a print runs its card is fetched again on every poll, so what it has used
 so far grows with it; the finished list below is left alone and keeps however
