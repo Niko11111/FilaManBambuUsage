@@ -327,7 +327,13 @@ two weights.
 The facts are printer, whether the job came from the cloud or from the printer
 itself, when it ran, how long it took (or what the slicer predicted while it is
 still running), how much material, how many layers, how many objects and which
-nozzle. Each carries a small monochrome icon. They live inline in `page.html` as
+nozzle.
+
+Behind the duration sits how far it was off the prediction, in minutes and per
+cent, red for slower and green for faster. Only for a print that ran to its end:
+one stopped at a third would read "-70%" in green as though it had been fast.
+The colour follows the percentage rather than the minutes, because half an hour
+on a two day print is not a print that went wrong. Each carries a small monochrome icon. They live inline in `page.html` as
 `<template>` elements, because the plugin ZIP rejects `.svg`, and every one of
 them draws in `currentColor` so it takes the colour of whatever it sits next
 to, in all three themes.

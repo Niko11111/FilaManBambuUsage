@@ -67,7 +67,8 @@
     "deleteExplain": "Only the entry in this list goes. What was booked stays booked on the spool, because the filament was really used.",
     "deleteConfirm": "Delete",
     "cancel": "Cancel",
-    "allPrinters": "All printers"
+    "allPrinters": "All printers",
+    "durationHoursOnly": "{hours} h"
   },
   "printType": {
     "cloud": "cloud print",

@@ -307,6 +307,27 @@
       background: color-mix(in srgb, var(--accent) 16%, transparent);
     }
 
+    /* How far the print was off what the slicer promised. Tinted rather than
+       coloured text, like every other badge: green at this size does not carry
+       enough contrast in the light theme. */
+    .badge.delta {
+      font-size: 0.74rem;
+      padding: 1px 8px;
+      margin-left: 8px;
+    }
+    .badge.delta.slower {
+      border-color: var(--error-text);
+      background: color-mix(in srgb, var(--error-text) 16%, transparent);
+      color: var(--text);
+      font-weight: 600;
+    }
+    .badge.delta.faster {
+      border-color: var(--success-text);
+      background: color-mix(in srgb, var(--success-text) 16%, transparent);
+      color: var(--text);
+      font-weight: 600;
+    }
+
     /* The outcome of the print, which is the one thing to be readable across
        the room. Everything else next to it stays a quiet outline. */
     .badge.status {
@@ -701,6 +722,7 @@
         incomplete: 'printStatus.incomplete',
         no_3mf: 'printStatus.no3mf'
       };
+      var FINISHED_STATUS = 'finished';
       var GOOD_STATUS = { finished: true };
       var BAD_STATUS = { failed: true, cancelled: true };
 
@@ -1399,7 +1421,15 @@
 
         // What it took where it is over, what the slicer promised where it is
         // not. Two answers to one question, so only ever one of them shows.
-        add(duration(record) || estimate(record), 'clock');
+        var ran = duration(record);
+        if (ran) {
+          var span = withIcon(el('span', null, ran), 'clock');
+          var off = estimateDelta(record);
+          if (off) span.appendChild(off);
+          facts.appendChild(span);
+        } else {
+          add(estimate(record), 'clock');
+        }
         add(totalGrams(record), 'weight');
 
         if (record.layer_count) {
@@ -1427,12 +1457,56 @@
         return total === null ? null : grams(total);
       }
 
+      function estimateDelta(record) {
+        // Only where the print ran to its end. One stopped at a third would
+        // read "-70%" in green, as though it had been fast.
+        if (record.status !== FINISHED_STATUS || !record.estimated_seconds) return null;
+
+        var actual = printMinutes(record);
+        if (actual === null) return null;
+
+        var promised = Math.round(record.estimated_seconds / 60);
+        if (promised <= 0) return null;
+
+        var difference = actual - promised;
+        var percent = Math.round((difference / promised) * 100);
+
+        // Both figures where both say something. Two minutes off a seven hour
+        // print is zero per cent, and "+2 min · 0%" reads like a contradiction,
+        // so whichever rounds away is left out. Nothing off at all still says
+        // so, in the one place where 0% is the whole message.
+        var parts = [];
+        if (difference !== 0) parts.push(signed(difference) + humanMinutes(Math.abs(difference)));
+        if (percent !== 0 || difference === 0) parts.push(signed(percent) + Math.abs(percent) + '%');
+
+        var badge = el('span', 'badge delta', parts.join(' · '));
+        // Coloured by the share, not by the minutes: half an hour on a two day
+        // print is not a print that went wrong.
+        if (percent > 0) badge.classList.add('slower');
+        if (percent < 0) badge.classList.add('faster');
+        // Says what it is measured against, so the pill needs no words of its own.
+        badge.title = t('history.estimate', { duration: humanMinutes(promised) });
+        return badge;
+      }
+
+      function signed(value) {
+        // The minus of a negative number is written out here as well, so both
+        // directions read the same way.
+        if (value > 0) return '+';
+        return value < 0 ? '-' : '';
+      }
+
       function estimate(record) {
         if (!record.estimated_seconds) return null;
         return t('history.estimate', { duration: humanMinutes(Math.round(record.estimated_seconds / 60)) });
       }
 
       function duration(record) {
+        var minutes = printMinutes(record);
+        return minutes === null ? null : humanMinutes(minutes);
+      }
+
+      function printMinutes(record) {
         // Nothing while it runs: the remaining time already stands next to it,
         // and a duration growing beside that is one number too many.
         if (!record.started_at || !record.finished_at) return null;
@@ -1441,15 +1515,16 @@
           (new Date(record.finished_at) - new Date(record.started_at)) / 60000);
         // Two clocks that disagree can put the end before the start, and a
         // negative duration says less than nothing.
-        if (minutes < 0) return null;
-
-        return humanMinutes(minutes);
+        return minutes < 0 ? null : minutes;
       }
 
       function humanMinutes(minutes) {
         var hours = Math.floor(minutes / 60);
+        var rest = minutes % 60;
+        // "1 h 0 min" is not how anybody says one hour.
+        if (hours && !rest) return t('history.durationHoursOnly', { hours: hours });
         return hours
-          ? t('history.durationHours', { hours: hours, minutes: minutes % 60 })
+          ? t('history.durationHours', { hours: hours, minutes: rest })
           : t('history.durationMinutes', { minutes: minutes });
       }
 

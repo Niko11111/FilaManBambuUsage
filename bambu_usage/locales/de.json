@@ -67,7 +67,8 @@
     "deleteExplain": "Es verschwindet nur der Eintrag aus dieser Liste. Was gebucht wurde, bleibt auf der Spule gebucht, denn das Filament wurde wirklich verbraucht.",
     "deleteConfirm": "Löschen",
     "cancel": "Abbrechen",
-    "allPrinters": "Alle Drucker"
+    "allPrinters": "Alle Drucker",
+    "durationHoursOnly": "{hours} h"
   },
   "printType": {
     "cloud": "Cloud-Druck",
