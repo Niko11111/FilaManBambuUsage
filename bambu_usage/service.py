@@ -524,6 +524,7 @@ async def get_printer_status(db: AsyncSession) -> list[PrinterStatus]:
             current_file_name=row.current_file_name,
             progress_percent=row.progress_percent,
             last_error=row.last_error,
+            updated_at=row.updated_at,
         )
         for row in await store.list_printer_status(db)
     ]

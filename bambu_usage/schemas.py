@@ -42,6 +42,9 @@ class PrinterStatus(BaseModel):
     current_file_name: str | None = None
     progress_percent: int | None = None
     last_error: str | None = None
+    # When the listener last wrote this row. A row that stops being refreshed is
+    # how a dead tracker becomes visible from the page.
+    updated_at: datetime | None = None
 
 
 class FilamentUsage(BaseModel):

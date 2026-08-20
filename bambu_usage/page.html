@@ -67,7 +67,7 @@
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
 
-    .page-content { max-width: 900px; margin: 0 auto; padding: 32px 24px; }
+    .page-content { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
 
     /* FilaMan serves this page outside its own shell, so the navigation drawer
        is not there. Until FilaMan can embed a plugin page, this is the way
@@ -97,11 +97,19 @@
       box-shadow: var(--shadow-sm);
       margin-bottom: 20px;
     }
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
     .fm-card-header {
       font-family: var(--font-serif);
       font-size: 1.15rem;
       font-weight: 600;
-      margin: 0 0 14px;
+      margin: 0;
     }
 
     .pill {
@@ -113,51 +121,145 @@
       background: var(--bg-soft);
       border: 1px solid var(--border);
       font-size: 0.8rem;
-      font-weight: 600;
       color: var(--text-muted);
     }
     .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 999px;
+      width: 8px; height: 8px; border-radius: 50%;
       background: var(--text-muted);
       transition: background var(--transition);
     }
     .dot.ok { background: var(--success-text); }
-    .dot.err { background: var(--error-text); }
+    .dot.bad { background: var(--error-text); }
 
-    .notice {
-      border-left: 3px solid var(--accent-3);
-      background: var(--bg-soft);
+    .message {
       border-radius: var(--radius-sm);
-      padding: 16px 18px;
-      color: var(--text-muted);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--error-text);
+      background: var(--bg-elevated);
+      color: var(--error-text);
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      font-size: 0.9rem;
     }
-    .notice strong { color: var(--text); }
 
-    dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 8px 20px; margin: 0; }
-    dl.kv dt { color: var(--text-muted); font-size: 0.875rem; }
-    dl.kv dd { margin: 0; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+    .printer {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 12px 0;
+      border-top: 1px solid var(--border);
+    }
+    .printer:first-child { border-top: none; }
+    .printer-name { font-weight: 600; }
+    .printer-detail { color: var(--text-muted); font-size: 0.88rem; }
+    .printer-error { color: var(--error-text); font-size: 0.85rem; width: 100%; }
 
-    ol.steps { margin: 0; padding-left: 20px; color: var(--text-muted); }
-    ol.steps li { margin-bottom: 10px; }
-    ol.steps li strong { color: var(--text); font-weight: 600; }
-    ol.steps li.done .done-marker { color: var(--success-text); font-weight: 500; }
-
-    code {
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.85em;
+    .print {
+      display: grid;
+      grid-template-columns: 132px 1fr;
+      gap: 18px;
+      padding: 20px 0;
+      border-top: 1px solid var(--border);
+    }
+    .print:first-child { border-top: none; }
+    .print-preview {
+      width: 132px; height: 132px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg-soft);
+      object-fit: contain;
+    }
+    .print-title { font-weight: 600; word-break: break-all; }
+    .print-meta {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 1px 10px;
+      border-radius: 999px;
       background: var(--bg-soft);
       border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 1px 6px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+    .badge.good { color: var(--success-text); }
+    .badge.bad { color: var(--error-text); }
+    .badge.open { color: var(--accent-3); border-color: var(--accent-3); }
+
+    table.filaments { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    table.filaments th {
+      text-align: left;
+      font-weight: 500;
+      color: var(--text-muted);
+      padding: 4px 10px 4px 0;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    table.filaments td { padding: 6px 10px 6px 0; vertical-align: middle; }
+    table.filaments tr.needs-spool { background: rgba(247,200,106,0.08); }
+
+    .swatch {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+      margin-right: 6px;
+      vertical-align: -1px;
     }
 
-    footer { color: var(--text-muted); font-size: 0.8rem; margin-top: 28px; }
+    .row-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
-    @media (max-width: 560px) {
-      dl.kv { grid-template-columns: 1fr; gap: 2px 0; }
-      dl.kv dd { margin-bottom: 10px; }
+    select, input[type="number"], input[type="text"] {
+      font-family: inherit;
+      font-size: 0.88rem;
+      color: var(--text);
+      background: var(--bg-soft);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 6px 10px;
+      max-width: 100%;
+    }
+    input[type="number"] { width: 92px; }
+
+    .button {
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #0b1410;
+      background: var(--accent);
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      padding: 6px 14px;
+      cursor: pointer;
+      transition: filter var(--transition);
+    }
+    .button:hover { filter: brightness(1.08); }
+    .button:disabled { opacity: 0.5; cursor: default; }
+    .button.ghost {
+      background: transparent;
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .check { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+    .check input { margin-top: 6px; }
+    .field { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+    .hint { color: var(--text-muted); font-size: 0.82rem; margin: -4px 0 16px; max-width: 62ch; }
+    .saved { color: var(--success-text); font-size: 0.85rem; margin-left: 10px; }
+    .empty { color: var(--text-muted); font-size: 0.9rem; }
+
+    footer { color: var(--text-muted); font-size: 0.8rem; text-align: center; margin-top: 32px; }
+
+    @media (max-width: 620px) {
+      .print { grid-template-columns: 1fr; }
+      .print-preview { width: 100%; height: auto; max-height: 240px; }
     }
   </style>
 </head>
@@ -171,162 +273,621 @@
       <p data-i18n="page.subtitle"></p>
     </div>
 
-    <div class="fm-card">
-      <h2 class="fm-card-header" data-i18n="status.heading"></h2>
-      <p>
+    <div id="message" class="message" hidden></div>
+
+    <section class="fm-card">
+      <div class="card-head">
+        <h2 class="fm-card-header" data-i18n="status.heading"></h2>
         <span class="pill">
           <span class="dot" id="health-dot"></span>
           <span id="health-label" data-i18n="status.checking"></span>
+          <span id="health-version"></span>
         </span>
-      </p>
-      <dl class="kv" style="margin-top:16px">
-        <dt data-i18n="status.version"></dt><dd id="v-version">-</dd>
-        <dt data-i18n="status.tracking"></dt><dd id="v-tracking">-</dd>
-        <dt data-i18n="status.printersWatched"></dt><dd id="v-printers">-</dd>
-      </dl>
-    </div>
-
-    <div class="fm-card">
-      <h2 class="fm-card-header" data-i18n="notice.heading"></h2>
-      <div class="notice">
-        <strong data-i18n="notice.lead"></strong>
-        <span data-i18n="notice.body"></span>
       </div>
-    </div>
+      <div id="printers"></div>
+    </section>
 
-    <div class="fm-card">
-      <h2 class="fm-card-header" data-i18n="roadmap.heading"></h2>
-      <ol class="steps">
-        <li class="done">
-          <strong data-i18n="roadmap.stage1Name"></strong>
-          <span class="done-marker" data-i18n="roadmap.done"></span>
-          <span data-i18n="roadmap.stage1"></span>
-        </li>
-        <li><strong data-i18n="roadmap.stage2Name"></strong> <span data-i18n="roadmap.stage2"></span></li>
-        <li><strong data-i18n="roadmap.stage3Name"></strong> <span data-i18n="roadmap.stage3"></span></li>
-        <li><strong data-i18n="roadmap.stage4Name"></strong> <span data-i18n="roadmap.stage4"></span></li>
-      </ol>
-    </div>
+    <section class="fm-card">
+      <h2 class="fm-card-header" data-i18n="history.heading"></h2>
+      <div id="history"></div>
+      <button type="button" id="load-more" class="button ghost" data-i18n="history.loadMore" hidden></button>
+    </section>
 
-    <div class="fm-card">
-      <h2 class="fm-card-header" data-i18n="requirements.heading"></h2>
-      <dl class="kv">
-        <dt data-i18n="requirements.printers"></dt><dd id="req-printers"></dd>
-        <dt data-i18n="requirements.credentials"></dt><dd data-i18n="requirements.credentialsValue"></dd>
-        <dt data-i18n="requirements.network"></dt><dd data-i18n="requirements.networkValue"></dd>
-      </dl>
-    </div>
+    <section class="fm-card">
+      <h2 class="fm-card-header" data-i18n="settings.heading"></h2>
+      <form id="settings-form">
+        <div class="field">
+          <span data-i18n="settings.scope"></span>
+          <select id="settings-scope"></select>
+        </div>
+        <label class="check">
+          <input type="checkbox" id="tracking-enabled" />
+          <span data-i18n="settings.tracking"></span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="auto-spend" />
+          <span data-i18n="settings.autoSpend"></span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="spend-on-cancel" />
+          <span data-i18n="settings.spendOnCancel"></span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="clear-assignment" />
+          <span data-i18n="settings.clearAssignment"></span>
+        </label>
+        <div class="field">
+          <span data-i18n="settings.retention"></span>
+          <input type="number" id="retention" min="0" step="1" />
+        </div>
+        <p class="hint" data-i18n="settings.retentionHint"></p>
+        <button type="submit" class="button" data-i18n="settings.save"></button>
+        <span id="settings-saved" class="saved" data-i18n="settings.saved" hidden></span>
+      </form>
+    </section>
 
     <footer data-i18n="page.footer"></footer>
-
   </div>
 
   <script>
-    // Mirrors FilaMan's own i18n contract (frontend/src/lib/i18n.ts): the chosen
-    // language lives in localStorage['lang'], dictionaries are nested JSON
-    // addressed by dotted keys, and {name} placeholders are interpolated.
-    // Because the contract is the same, this page follows whatever language the
-    // user selected in FilaMan, with no switch of its own.
     (function () {
+      'use strict';
+
+      // Reading goes to the plugin's own mount, writing to /api/v1, because
+      // FilaMan's CSRF protection only guards paths below it. See router.py.
       var MOUNT = '/bambu-usage';
-      var FALLBACK_LANGUAGE = 'en';
-      var DRIVER_KEY = 'bambulab';
+      var ADMIN = '/api/v1/plugins/bambu-usage';
 
-      var dict = {};
-      var fallbackDict = {};
+      var HISTORY_PAGE_SIZE = 20;
+      var STATUS_INTERVAL_MS = 10000;
+      var SPOOL_PAGE_SIZE = 200;
+      var SPOOL_PAGE_LIMIT = 10;
+      var GLOBAL_PRINTER_ID = 0;
+      var EXTERNAL_SLOT_INDEX = '255-254';
+      var SAVED_VISIBLE_MS = 2500;
 
-      function resolve(source, key) {
-        var node = source;
-        var parts = key.split('.');
-        for (var i = 0; i < parts.length; i++) {
-          if (node === null || typeof node !== 'object') { return undefined; }
-          node = node[parts[i]];
-        }
-        return typeof node === 'string' ? node : undefined;
+      // Written out rather than built from the status string, so every key is
+      // visible to the test that checks the dictionaries against the page.
+      var STATUS_KEYS = {
+        running: 'printStatus.running',
+        finished: 'printStatus.finished',
+        failed: 'printStatus.failed',
+        cancelled: 'printStatus.cancelled',
+        incomplete: 'printStatus.incomplete',
+        no_3mf: 'printStatus.no3mf'
+      };
+      var GOOD_STATUS = { finished: true };
+      var BAD_STATUS = { failed: true, cancelled: true };
+
+      var dictionary = {};
+      var spools = new Map();
+      var printers = [];
+      var settingsRows = new Map();
+      var historyOffset = 0;
+
+      /* ── translation ─────────────────────────────────────────── */
+
+      function resolve(key) {
+        return key.split('.').reduce(function (node, part) {
+          return node && typeof node === 'object' ? node[part] : undefined;
+        }, dictionary);
       }
 
-      // Falls back key by key, so a partial translation shows English rather
-      // than a blank, and an unknown key shows itself rather than nothing.
-      function t(key, vars) {
-        var text = resolve(dict, key);
-        if (text === undefined) { text = resolve(fallbackDict, key); }
-        if (text === undefined) { text = key; }
-        if (vars) {
-          Object.keys(vars).forEach(function (name) {
-            text = text.split('{' + name + '}').join(String(vars[name]));
-          });
-        }
-        return text;
+      function t(key, values) {
+        var text = resolve(key);
+        if (typeof text !== 'string') return key;
+        if (!values) return text;
+        return text.replace(/\{(\w+)\}/g, function (match, name) {
+          return values[name] === undefined ? match : values[name];
+        });
       }
 
       function translatePage() {
-        document.querySelectorAll('[data-i18n]').forEach(function (el) {
-          el.textContent = t(el.getAttribute('data-i18n'));
+        document.querySelectorAll('[data-i18n]').forEach(function (element) {
+          element.textContent = t(element.getAttribute('data-i18n'));
         });
-        document.querySelectorAll('[data-i18n-placeholder]').forEach(function (el) {
-          el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+        document.querySelectorAll('[data-i18n-title]').forEach(function (element) {
+          element.title = t(element.getAttribute('data-i18n-title'));
         });
-        document.querySelectorAll('[data-i18n-title]').forEach(function (el) {
-          el.title = t(el.getAttribute('data-i18n-title'));
-        });
-        // The one string carrying a placeholder, so interpolation stays exercised.
-        document.getElementById('req-printers').textContent =
-          t('requirements.printersValue', { driver: DRIVER_KEY });
       }
 
-      function loadDictionary(language) {
-        return fetch(MOUNT + '/i18n/' + encodeURIComponent(language), {
+      function language() {
+        // The same contract FilaMan's own interface uses, so this page follows
+        // whatever language was selected there. See docs/01_Design.md section 9.
+        return localStorage.getItem('lang') || 'en';
+      }
+
+      function loadDictionary() {
+        return fetch(MOUNT + '/i18n/' + encodeURIComponent(language()), {
           headers: { 'Accept': 'application/json' }
-        }).then(function (r) {
-          if (!r.ok) { throw new Error('HTTP ' + r.status); }
-          return r.json();
+        }).then(function (response) {
+          return response.ok ? response.json() : {};
+        }).then(function (data) {
+          dictionary = data;
+          document.documentElement.lang = language();
+          translatePage();
         });
       }
 
-      function showHealth() {
-        var dot = document.getElementById('health-dot');
-        var label = document.getElementById('health-label');
+      /* ── talking to the two APIs ─────────────────────────────── */
 
-        return fetch(MOUNT + '/health', { headers: { 'Accept': 'application/json' } })
-          .then(function (r) {
-            if (!r.ok) { throw new Error('HTTP ' + r.status); }
-            return r.json();
-          })
-          .then(function (d) {
-            dot.classList.add('ok');
-            label.textContent = t('status.mounted');
-            document.getElementById('v-version').textContent = d.version || '-';
-            document.getElementById('v-tracking').textContent =
-              t(d.tracking_active ? 'status.active' : 'status.inactive');
-            document.getElementById('v-printers').textContent = d.printers_watched;
-          })
-          .catch(function (e) {
-            dot.classList.add('err');
-            label.textContent = t('status.unreachable');
-            document.getElementById('v-version').textContent = String(e.message || e);
+      function read(path) {
+        return fetch(path, {
+          credentials: 'include',
+          headers: { 'Accept': 'application/json' }
+        }).then(unwrap);
+      }
+
+      function write(path, body) {
+        var token = (document.cookie.split('; ').find(function (entry) {
+          return entry.indexOf('csrf_token=') === 0;
+        }) || '').split('=')[1];
+
+        return fetch(path, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-Token': token || ''
+          },
+          body: JSON.stringify(body)
+        }).then(unwrap);
+      }
+
+      function put(path, body) {
+        var token = (document.cookie.split('; ').find(function (entry) {
+          return entry.indexOf('csrf_token=') === 0;
+        }) || '').split('=')[1];
+
+        return fetch(path, {
+          method: 'PUT',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-Token': token || ''
+          },
+          body: JSON.stringify(body)
+        }).then(unwrap);
+      }
+
+      function unwrap(response) {
+        if (response.status === 204) return null;
+        return response.json().catch(function () {
+          return null;
+        }).then(function (data) {
+          if (response.ok) return data;
+          // The backend hands out a stable code and an English fallback. The
+          // code is what this page translates. See docs/01_Design.md section 9.
+          var detail = data && data.detail ? data.detail : {};
+          var message = detail.code ? t(detail.code) : null;
+          throw new Error(message || detail.message || t('errors.generic'));
+        });
+      }
+
+      function complain(error) {
+        var box = document.getElementById('message');
+        box.textContent = error && error.message ? error.message : t('errors.generic');
+        box.hidden = false;
+      }
+
+      function clearComplaint() {
+        document.getElementById('message').hidden = true;
+      }
+
+      /* ── small builders ──────────────────────────────────────── */
+
+      function el(tag, className, text) {
+        var node = document.createElement(tag);
+        if (className) node.className = className;
+        // Always textContent: a file name comes off a printer and is not ours
+        // to trust with innerHTML.
+        if (text !== undefined && text !== null) node.textContent = text;
+        return node;
+      }
+
+      function grams(value) {
+        return value === null || value === undefined ? '-' : value.toFixed(1) + ' g';
+      }
+
+      function moment(value) {
+        return value ? new Date(value).toLocaleString() : '';
+      }
+
+      /* ── printers ────────────────────────────────────────────── */
+
+      function refreshStatus() {
+        return read(MOUNT + '/health').then(function (health) {
+          var dot = document.getElementById('health-dot');
+          var label = document.getElementById('health-label');
+          dot.className = 'dot ok';
+          label.textContent = t('status.mounted');
+          document.getElementById('health-version').textContent =
+            t('status.version') + ' ' + health.version;
+        }).catch(function () {
+          document.getElementById('health-dot').className = 'dot bad';
+          document.getElementById('health-label').textContent = t('status.unreachable');
+        }).then(function () {
+          return read(MOUNT + '/status');
+        }).then(function (rows) {
+          printers = rows || [];
+          renderPrinters();
+        });
+      }
+
+      function renderPrinters() {
+        var target = document.getElementById('printers');
+        target.textContent = '';
+
+        if (!printers.length) {
+          target.appendChild(el('p', 'empty', t('status.none')));
+          return;
+        }
+
+        printers.forEach(function (printer) {
+          var row = el('div', 'printer');
+          row.appendChild(el('span', 'printer-name', printer.printer_name));
+
+          var state = el('span', 'badge');
+          if (!printer.tracking_enabled) {
+            state.textContent = t('status.trackingOff');
+          } else if (printer.connected) {
+            state.textContent = t('status.connected');
+            state.classList.add('good');
+          } else {
+            state.textContent = t('status.disconnected');
+            state.classList.add('bad');
+          }
+          row.appendChild(state);
+
+          var detail = printer.current_file_name
+            ? t('status.printing', { file: printer.current_file_name })
+            : t('status.idle');
+          if (printer.progress_percent !== null && printer.progress_percent !== undefined) {
+            detail += ' (' + printer.progress_percent + '%)';
+          }
+          row.appendChild(el('span', 'printer-detail', detail));
+
+          if (printer.updated_at) {
+            row.appendChild(el('span', 'printer-detail',
+              t('status.updated', { time: moment(printer.updated_at) })));
+          }
+
+          if (printer.last_error) {
+            row.appendChild(el('span', 'printer-error', t('status.lastError') + ': ' + printer.last_error));
+          }
+
+          target.appendChild(row);
+        });
+      }
+
+      function printerName(printerId) {
+        var match = printers.find(function (printer) {
+          return printer.printer_id === printerId;
+        });
+        return match ? match.printer_name : String(printerId);
+      }
+
+      /* ── spools, straight from FilaMan ───────────────────────── */
+
+      function loadSpools() {
+        spools.clear();
+        return fetchSpoolPage(1);
+      }
+
+      function fetchSpoolPage(page) {
+        var query = '/api/v1/spools?page=' + page + '&page_size=' + SPOOL_PAGE_SIZE;
+        return read(query).then(function (data) {
+          var items = (data && data.items) || [];
+          items.forEach(function (spool) {
+            spools.set(spool.id, spoolLabel(spool));
           });
+          var seen = page * SPOOL_PAGE_SIZE;
+          if (data && data.total > seen && page < SPOOL_PAGE_LIMIT) {
+            return fetchSpoolPage(page + 1);
+          }
+          return null;
+        }).catch(function () {
+          // The history is still worth showing without spool names.
+          complain(new Error(t('errors.spoolsUnavailable')));
+        });
       }
 
-      function init() {
-        var language = localStorage.getItem('lang') || FALLBACK_LANGUAGE;
-        document.documentElement.setAttribute('lang', language);
-
-        // English is loaded as well, so a partial translation degrades per key.
-        var wanted = loadDictionary(language);
-        var english = language === FALLBACK_LANGUAGE
-          ? wanted
-          : loadDictionary(FALLBACK_LANGUAGE).catch(function () { return {}; });
-
-        Promise.all([wanted.catch(function () { return {}; }), english])
-          .then(function (loaded) {
-            dict = loaded[0];
-            fallbackDict = loaded[1];
-          })
-          .then(translatePage)
-          .then(showHealth);
+      function spoolLabel(spool) {
+        var filament = spool.filament || {};
+        var parts = [];
+        if (filament.manufacturer && filament.manufacturer.name) parts.push(filament.manufacturer.name);
+        if (filament.designation) parts.push(filament.designation);
+        if (filament.manufacturer_color_name) parts.push(filament.manufacturer_color_name);
+        if (spool.remaining_weight_g !== null && spool.remaining_weight_g !== undefined) {
+          parts.push(grams(spool.remaining_weight_g));
+        }
+        return '#' + spool.id + ' ' + parts.join(', ');
       }
 
-      init();
+      function spoolName(spoolId) {
+        if (spoolId === null || spoolId === undefined) return t('history.unassigned');
+        return spools.get(spoolId) || '#' + spoolId;
+      }
+
+      /* ── history ─────────────────────────────────────────────── */
+
+      function loadHistory(reset) {
+        if (reset) historyOffset = 0;
+        var query = MOUNT + '/history?limit=' + HISTORY_PAGE_SIZE + '&offset=' + historyOffset;
+
+        return read(query).then(function (records) {
+          var target = document.getElementById('history');
+          if (reset) target.textContent = '';
+
+          if (!records.length && !historyOffset) {
+            target.appendChild(el('p', 'empty', t('history.none')));
+          }
+          records.forEach(function (record) {
+            target.appendChild(renderPrint(record));
+          });
+
+          historyOffset += records.length;
+          document.getElementById('load-more').hidden = records.length < HISTORY_PAGE_SIZE;
+        });
+      }
+
+      function renderPrint(record) {
+        var wrapper = el('div', 'print');
+
+        if (record.has_thumbnail) {
+          var preview = el('img', 'print-preview');
+          preview.src = MOUNT + '/thumb/' + record.id;
+          preview.alt = '';
+          wrapper.appendChild(preview);
+        } else {
+          wrapper.appendChild(el('div', 'print-preview'));
+        }
+
+        var body = el('div');
+        body.appendChild(el('div', 'print-title', record.file_name));
+
+        var meta = el('div', 'print-meta');
+        meta.appendChild(el('span', null, printerName(record.printer_id)));
+        meta.appendChild(el('span', null, moment(record.finished_at || record.started_at)));
+
+        var key = STATUS_KEYS[record.status];
+        var badge = el('span', 'badge', key ? t(key) : record.status);
+        if (GOOD_STATUS[record.status]) badge.classList.add('good');
+        if (BAD_STATUS[record.status]) badge.classList.add('bad');
+        meta.appendChild(badge);
+
+        if (record.completed_fraction !== null && record.completed_fraction !== undefined
+            && BAD_STATUS[record.status]) {
+          meta.appendChild(el('span', 'badge', t('history.stoppedAt', {
+            percent: Math.round(record.completed_fraction * 100)
+          })));
+        }
+
+        if (!record.spent && bookable(record)) {
+          var book = el('button', 'button ghost', t('history.book'));
+          book.type = 'button';
+          book.addEventListener('click', function () {
+            act(book, write(ADMIN + '/print/' + record.id + '/spend', {}));
+          });
+          meta.appendChild(book);
+        }
+
+        body.appendChild(meta);
+        body.appendChild(filamentTable(record));
+        wrapper.appendChild(body);
+        return wrapper;
+      }
+
+      function bookable(record) {
+        return record.filaments.some(function (usage) {
+          return usage.spool_id !== null && usage.spool_id !== undefined && !usage.spent_at;
+        });
+      }
+
+      function filamentTable(record) {
+        var table = el('table', 'filaments');
+        var head = el('tr');
+        [
+          t('history.filament'), t('history.slot'), t('history.spool'),
+          t('history.estimated'), t('history.booked'), ''
+        ].forEach(function (caption) {
+          head.appendChild(el('th', null, caption));
+        });
+        table.appendChild(head);
+
+        record.filaments.forEach(function (usage) {
+          table.appendChild(filamentRow(usage));
+        });
+        return table;
+      }
+
+      function filamentRow(usage) {
+        var assigned = usage.spool_id !== null && usage.spool_id !== undefined;
+        var row = el('tr', assigned ? null : 'needs-spool');
+
+        var first = el('td');
+        if (usage.color_hex) {
+          var swatch = el('span', 'swatch');
+          swatch.style.background = usage.color_hex;
+          first.appendChild(swatch);
+        }
+        first.appendChild(document.createTextNode(usage.material || ''));
+        row.appendChild(first);
+
+        row.appendChild(el('td', null,
+          usage.slot_index === EXTERNAL_SLOT_INDEX ? t('history.external') : (usage.slot_index || '-')));
+        row.appendChild(el('td', null, spoolName(usage.spool_id)));
+        row.appendChild(el('td', null, grams(usage.estimated_grams)));
+
+        var booked = el('td', null, usage.spent_at ? grams(usage.spent_grams) : t('history.notBooked'));
+        if (usage.manual_override) booked.title = t('history.corrected');
+        row.appendChild(booked);
+
+        row.appendChild(assigned ? correctionCell(usage) : assignmentCell(usage));
+        return row;
+      }
+
+      function assignmentCell(usage) {
+        var cell = el('td');
+        var actions = el('div', 'row-actions');
+
+        var choice = el('select');
+        var placeholder = el('option', null, t('history.chooseSpool'));
+        placeholder.value = '';
+        choice.appendChild(placeholder);
+        spools.forEach(function (label, spoolId) {
+          var option = el('option', null, label);
+          option.value = String(spoolId);
+          choice.appendChild(option);
+        });
+        actions.appendChild(choice);
+
+        var bookLabel = el('label', 'check');
+        var bookNow = el('input');
+        bookNow.type = 'checkbox';
+        bookNow.checked = true;
+        bookLabel.appendChild(bookNow);
+        bookLabel.appendChild(el('span', null, t('history.bookNow')));
+        actions.appendChild(bookLabel);
+
+        var button = el('button', 'button', t('history.assign'));
+        button.type = 'button';
+        button.addEventListener('click', function () {
+          if (!choice.value) return;
+          act(button, write(ADMIN + '/filament/' + usage.id + '/assign', {
+            spool_id: Number(choice.value),
+            spend_now: bookNow.checked
+          }));
+        });
+        actions.appendChild(button);
+
+        cell.appendChild(actions);
+        return cell;
+      }
+
+      function correctionCell(usage) {
+        var cell = el('td');
+        var actions = el('div', 'row-actions');
+
+        var amount = el('input');
+        amount.type = 'number';
+        amount.min = '0';
+        amount.step = '0.1';
+        var current = usage.spent_grams === null || usage.spent_grams === undefined
+          ? usage.estimated_grams : usage.spent_grams;
+        amount.value = current === null || current === undefined ? '' : current.toFixed(1);
+        actions.appendChild(amount);
+
+        var button = el('button', 'button ghost', t('history.correct'));
+        button.type = 'button';
+        button.addEventListener('click', function () {
+          if (amount.value === '') return;
+          act(button, write(ADMIN + '/filament/' + usage.id + '/correct', {
+            grams: Number(amount.value)
+          }));
+        });
+        actions.appendChild(button);
+
+        cell.appendChild(actions);
+        return cell;
+      }
+
+      function act(button, promise) {
+        clearComplaint();
+        button.disabled = true;
+        promise.then(function () {
+          return Promise.all([loadSpools(), loadHistory(true)]);
+        }).catch(complain).then(function () {
+          button.disabled = false;
+        });
+      }
+
+      /* ── settings ────────────────────────────────────────────── */
+
+      function loadSettings() {
+        return read(MOUNT + '/settings').then(function (rows) {
+          settingsRows.clear();
+          rows.forEach(function (row) {
+            settingsRows.set(row.printer_id, row);
+          });
+          buildScope();
+          fillSettings();
+        });
+      }
+
+      function buildScope() {
+        var scope = document.getElementById('settings-scope');
+        var chosen = scope.value;
+        scope.textContent = '';
+
+        var everywhere = el('option', null, t('settings.global'));
+        everywhere.value = String(GLOBAL_PRINTER_ID);
+        scope.appendChild(everywhere);
+
+        printers.forEach(function (printer) {
+          var option = el('option', null, printer.printer_name);
+          option.value = String(printer.printer_id);
+          scope.appendChild(option);
+        });
+
+        if (chosen) scope.value = chosen;
+      }
+
+      function fillSettings() {
+        var printerId = Number(document.getElementById('settings-scope').value || GLOBAL_PRINTER_ID);
+        // A printer without a row of its own inherits the global one, which is
+        // exactly what the backend does when it resolves the settings.
+        var row = settingsRows.get(printerId) || settingsRows.get(GLOBAL_PRINTER_ID) || {};
+
+        document.getElementById('tracking-enabled').checked = row.tracking_enabled !== false;
+        document.getElementById('auto-spend').checked = row.auto_spend !== false;
+        document.getElementById('spend-on-cancel').checked = row.spend_on_cancel !== false;
+        document.getElementById('clear-assignment').checked = row.clear_assignment_when_empty === true;
+        document.getElementById('retention').value =
+          row.history_retention_days === undefined ? '' : row.history_retention_days;
+      }
+
+      function saveSettings(event) {
+        event.preventDefault();
+        clearComplaint();
+
+        var body = {
+          printer_id: Number(document.getElementById('settings-scope').value || GLOBAL_PRINTER_ID),
+          tracking_enabled: document.getElementById('tracking-enabled').checked,
+          auto_spend: document.getElementById('auto-spend').checked,
+          spend_on_cancel: document.getElementById('spend-on-cancel').checked,
+          clear_assignment_when_empty: document.getElementById('clear-assignment').checked,
+          history_retention_days: Number(document.getElementById('retention').value || 0)
+        };
+
+        put(ADMIN + '/settings', body).then(function () {
+          var saved = document.getElementById('settings-saved');
+          saved.hidden = false;
+          setTimeout(function () { saved.hidden = true; }, SAVED_VISIBLE_MS);
+          return loadSettings();
+        }).catch(complain);
+      }
+
+      /* ── boot ────────────────────────────────────────────────── */
+
+      document.getElementById('load-more').addEventListener('click', function () {
+        loadHistory(false).catch(complain);
+      });
+      document.getElementById('settings-form').addEventListener('submit', saveSettings);
+      document.getElementById('settings-scope').addEventListener('change', fillSettings);
+
+      loadDictionary()
+        .then(refreshStatus)
+        .then(loadSpools)
+        .then(loadSettings)
+        .then(function () { return loadHistory(true); })
+        .catch(complain);
+
+      setInterval(function () {
+        refreshStatus().catch(function () { /* the next round tries again */ });
+      }, STATUS_INTERVAL_MS);
     })();
   </script>
 </body>

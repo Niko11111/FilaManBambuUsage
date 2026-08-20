@@ -1,51 +1,72 @@
 {
   "page": {
-    "back": "Zurück zu FilaMan",
     "title": "Bambu Verbrauchserfassung",
     "subtitle": "Bucht das bei Bambu-Lab-Drucken verbrauchte Filament von den passenden FilaMan-Spulen ab und führt eine Druckhistorie mit Plate-Vorschau.",
-    "footer": "FilaManBambuUsage, MIT. Verbrauchslogik portiert aus OpenSpoolMan (MIT)."
+    "back": "Zurück zu FilaMan",
+    "footer": "FilaManBambuUsage, MIT. Verbrauchslogik portiert von OpenSpoolMan (MIT)."
   },
   "status": {
-    "heading": "Status",
+    "heading": "Drucker",
     "checking": "wird geprüft",
     "mounted": "Plugin eingebunden",
     "unreachable": "Router nicht erreichbar",
     "version": "Version",
-    "tracking": "Erfassung",
-    "active": "aktiv",
-    "inactive": "inaktiv",
-    "printersWatched": "Überwachte Drucker"
+    "none": "Kein Bambu-Lab-Drucker gefunden. Lege in FilaMan einen mit dem Bambu-Lab-Treiber an.",
+    "connected": "verbunden",
+    "disconnected": "keine Verbindung",
+    "trackingOff": "Erfassung aus",
+    "printing": "druckt {file}",
+    "idle": "kein Druck aktiv",
+    "lastError": "Letzter Fehler",
+    "updated": "Stand {time}"
   },
-  "notice": {
-    "heading": "Noch nichts zu sehen",
-    "lead": "Dieses Plugin ist Meilenstein 1: Spezifikation und Gerüst.",
-    "body": "Es lässt sich bauen, installieren und einbinden, erfasst aber nichts. Es verbindet sich zu keinem Drucker und verändert keine Spule. Der Zweck dieser Stufe ist der Nachweis, dass die Plugin-Lösung trägt, bevor Logik entsteht."
+  "history": {
+    "heading": "Drucke",
+    "none": "Noch kein Druck erfasst. Der nächste auf einem überwachten Drucker landet hier.",
+    "loadMore": "Mehr anzeigen",
+    "filament": "Filament",
+    "slot": "Slot",
+    "external": "externe Spule",
+    "estimated": "Geschätzt",
+    "booked": "Gebucht",
+    "spool": "Spule",
+    "unassigned": "nicht zugeordnet",
+    "chooseSpool": "Spule auswählen",
+    "assign": "Zuordnen",
+    "bookNow": "gleich buchen",
+    "book": "Diesen Druck buchen",
+    "correct": "Korrigieren",
+    "corrected": "von Hand korrigiert",
+    "stoppedAt": "bei {percent}% abgebrochen",
+    "notBooked": "nicht gebucht"
   },
-  "roadmap": {
-    "heading": "Was kommt",
-    "done": "(erledigt)",
-    "stage1Name": "Stufe 1",
-    "stage1": "Entwurf, Gerüst, installierbares Paket",
-    "stage2Name": "Stufe 2",
-    "stage2": "Listener je Drucker, 3MF auswerten, Netzwerkdrucke abbuchen, Historie mit Vorschau, Zuordnung nachträglich korrigieren",
-    "stage3Name": "Stufe 3",
-    "stage3": "lokale Drucke über die Filamentwechsel-Erkennung",
-    "stage4Name": "Stufe 4",
-    "stage4": "layerweises Tracking, anteilige Abbuchung bei Abbruch"
+  "printStatus": {
+    "running": "läuft",
+    "finished": "fertig",
+    "failed": "fehlgeschlagen",
+    "cancelled": "abgebrochen",
+    "incomplete": "mittendrin dazugekommen",
+    "no3mf": "3MF fehlt"
   },
-  "requirements": {
-    "heading": "Voraussetzungen",
-    "printers": "Drucker",
-    "printersValue": "mindestens einer mit dem Treiber {driver}",
-    "credentials": "Zugangsdaten",
-    "credentialsValue": "werden aus dem Drucker übernommen, keine Doppeleingabe",
-    "network": "Netz",
-    "networkValue": "MQTT und FTPS im LAN, keine Bambu-Cloud"
+  "settings": {
+    "heading": "Einstellungen",
+    "scope": "Gilt für",
+    "global": "Alle Drucker",
+    "tracking": "Diesen Drucker erfassen",
+    "autoSpend": "Nach jedem fertigen Druck automatisch abbuchen",
+    "spendOnCancel": "Abgebrochenen Druck anteilig abbuchen",
+    "clearAssignment": "Slot-Zuordnung aufheben, wenn eine Spule leer ist",
+    "retention": "Historie aufbewahren, Tage",
+    "retentionHint": "0 behält alles. Die Plate-Vorschau liegt beim Druck, das begrenzt also die Größe der Datenbank.",
+    "save": "Speichern",
+    "saved": "Gespeichert"
   },
   "errors": {
     "databaseUnavailable": "Die Datenbank des Plugins ist nicht erreichbar",
+    "localesMissing": "Im installierten Plugin fehlen die Übersetzungsdateien",
     "notFound": "Nicht gefunden",
     "bookingFailed": "Die Buchung war nicht möglich",
-    "localesMissing": "Im installierten Plugin fehlen die Übersetzungsdateien"
+    "generic": "Das hat nicht geklappt",
+    "spoolsUnavailable": "Die Spulenliste konnte nicht aus FilaMan geladen werden"
   }
 }

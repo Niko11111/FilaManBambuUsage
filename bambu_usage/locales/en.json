@@ -1,51 +1,72 @@
 {
   "page": {
-    "back": "Back to FilaMan",
     "title": "Bambu Usage Tracking",
     "subtitle": "Deducts the filament used by Bambu Lab prints from the matching FilaMan spools and keeps a print history with plate previews.",
+    "back": "Back to FilaMan",
     "footer": "FilaManBambuUsage, MIT. Consumption logic ported from OpenSpoolMan (MIT)."
   },
   "status": {
-    "heading": "Status",
+    "heading": "Printers",
     "checking": "checking",
     "mounted": "Plugin mounted",
     "unreachable": "Router unreachable",
     "version": "Version",
-    "tracking": "Tracking",
-    "active": "active",
-    "inactive": "inactive",
-    "printersWatched": "Printers watched"
+    "none": "No Bambu Lab printer found. Add one in FilaMan with the Bambu Lab driver.",
+    "connected": "connected",
+    "disconnected": "no connection",
+    "trackingOff": "tracking off",
+    "printing": "printing {file}",
+    "idle": "no print running",
+    "lastError": "Last error",
+    "updated": "updated {time}"
   },
-  "notice": {
-    "heading": "Nothing to see yet",
-    "lead": "This plugin is milestone 1: specification and scaffold.",
-    "body": "It builds, installs and mounts, but tracks nothing. It connects to no printer and changes no spool. The point of this stage is to prove that the plugin approach holds before any logic is written."
+  "history": {
+    "heading": "Prints",
+    "none": "No print recorded yet. The next one on a watched printer lands here.",
+    "loadMore": "Show more",
+    "filament": "Filament",
+    "slot": "Slot",
+    "external": "external spool",
+    "estimated": "Estimated",
+    "booked": "Booked",
+    "spool": "Spool",
+    "unassigned": "not assigned",
+    "chooseSpool": "Choose a spool",
+    "assign": "Assign",
+    "bookNow": "book right away",
+    "book": "Book this print",
+    "correct": "Correct",
+    "corrected": "corrected by hand",
+    "stoppedAt": "stopped at {percent}%",
+    "notBooked": "not booked"
   },
-  "roadmap": {
-    "heading": "What comes next",
-    "done": "(done)",
-    "stage1Name": "Stage 1",
-    "stage1": "design, scaffold, installable package",
-    "stage2Name": "Stage 2",
-    "stage2": "a listener per printer, reading the 3MF, deducting network prints, history with previews, correcting an assignment after the fact",
-    "stage3Name": "Stage 3",
-    "stage3": "local prints, through filament change detection",
-    "stage4Name": "Stage 4",
-    "stage4": "per layer tracking, proportional deduction on abort"
+  "printStatus": {
+    "running": "running",
+    "finished": "finished",
+    "failed": "failed",
+    "cancelled": "cancelled",
+    "incomplete": "joined in the middle",
+    "no3mf": "3MF missing"
   },
-  "requirements": {
-    "heading": "Requirements",
-    "printers": "Printers",
-    "printersValue": "at least one using the {driver} driver",
-    "credentials": "Credentials",
-    "credentialsValue": "taken from the printer, nothing to enter twice",
-    "network": "Network",
-    "networkValue": "MQTT and FTPS on the LAN, no Bambu cloud"
+  "settings": {
+    "heading": "Settings",
+    "scope": "Applies to",
+    "global": "All printers",
+    "tracking": "Track this printer",
+    "autoSpend": "Deduct automatically when a print finishes",
+    "spendOnCancel": "Deduct an aborted print at the share it got through",
+    "clearAssignment": "Clear the slot assignment when a spool runs empty",
+    "retention": "Keep history for days",
+    "retentionHint": "0 keeps everything. Plate previews are stored with the print, so this is what bounds the size of the database.",
+    "save": "Save",
+    "saved": "Saved"
   },
   "errors": {
     "databaseUnavailable": "The plugin database is not available",
+    "localesMissing": "Translation files are missing from the installed plugin",
     "notFound": "Not found",
     "bookingFailed": "The booking could not be carried out",
-    "localesMissing": "Translation files are missing from the installed plugin"
+    "generic": "That did not work",
+    "spoolsUnavailable": "The spool list could not be loaded from FilaMan"
   }
 }
