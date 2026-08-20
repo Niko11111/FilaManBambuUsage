@@ -131,6 +131,9 @@ async def start_print(
         thumbnail=metadata.thumbnail,
         thumbnail_mime=metadata.thumbnail_mime,
         layer_shares=metadata.layer_shares,
+        estimated_seconds=metadata.estimated_seconds,
+        object_count=metadata.object_count,
+        nozzle_diameter=metadata.nozzle_diameter,
     )
 
     await store.add_filament_rows(

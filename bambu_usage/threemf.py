@@ -83,6 +83,11 @@ MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
 # The metadata key under <plate> that carries the plate number.
 PLATE_INDEX_KEY = "index"
 
+# What the slicer predicts for the plate, in seconds, and the nozzle it sliced
+# for. A dual nozzle machine reports two, separated by a comma.
+PREDICTION_KEY = "prediction"
+NOZZLE_DIAMETERS_KEY = "nozzle_diameters"
+
 # How a Bambu plate gcode marks the start of a layer. Read out of three real
 # files, see docs/03_Bambu_Data_Sources.md.
 LAYER_MARKER = "; CHANGE_LAYER"
@@ -128,11 +133,31 @@ class FilamentInfo:
 
 
 @dataclass
+class SliceInfo:
+    """What slice_info.config says about one plate.
+
+    A dataclass rather than a tuple: five values in a row is where a caller
+    starts unpacking them in the wrong order.
+    """
+
+    plate_id: int | None = None
+    filaments: list[FilamentInfo] = field(default_factory=list)
+    # What the slicer predicts the plate takes, in seconds.
+    estimated_seconds: int | None = None
+    # How many objects sit on it. None where the file does not say.
+    object_count: int | None = None
+    nozzle_diameter: float | None = None
+
+
+@dataclass
 class PrintMetadata:
     """Everything this plugin needs out of one 3MF."""
 
     plate_id: int | None = None
     filaments: list[FilamentInfo] = field(default_factory=list)
+    estimated_seconds: int | None = None
+    object_count: int | None = None
+    nozzle_diameter: float | None = None
     thumbnail: bytes | None = None
     thumbnail_mime: str | None = None
     # Per filament, the share of its material each layer has used. Empty when
@@ -256,30 +281,34 @@ def parse(archive: Path) -> PrintMetadata:
 
 def _read_metadata(bundle: zipfile.ZipFile) -> PrintMetadata:
     """Pull plate, filaments, preview and layer curves out of an open archive."""
-    plate_id, filaments = _read_slice_info(bundle)
+    slice_info = _read_slice_info(bundle)
+    plate_id = slice_info.plate_id
     thumbnail = _read_thumbnail(bundle, plate_id)
 
     return PrintMetadata(
         plate_id=plate_id,
-        filaments=filaments,
+        filaments=slice_info.filaments,
+        estimated_seconds=slice_info.estimated_seconds,
+        object_count=slice_info.object_count,
+        nozzle_diameter=slice_info.nozzle_diameter,
         thumbnail=thumbnail,
         thumbnail_mime=THUMBNAIL_MIME if thumbnail else None,
         layer_shares={} if plate_id is None else _read_layer_shares(bundle, plate_id),
     )
 
 
-def _read_slice_info(bundle: zipfile.ZipFile) -> tuple[int | None, list[FilamentInfo]]:
+def _read_slice_info(bundle: zipfile.ZipFile) -> SliceInfo:
     """Read slice_info.config, tolerating its absence and malformed XML."""
     raw = _read_entry(bundle, SLICE_INFO_PATH, MAX_SLICE_INFO_BYTES)
     if raw is None:
         logger.warning("3MF carries no %s, no consumption can be derived", SLICE_INFO_PATH)
-        return None, []
+        return SliceInfo()
 
     try:
         return parse_slice_info(raw)
     except ET.ParseError as exc:
         logger.warning("%s is not valid XML: %s", SLICE_INFO_PATH, exc)
-        return None, []
+        return SliceInfo()
 
 
 def _read_thumbnail(bundle: zipfile.ZipFile, plate_id: int | None) -> bytes | None:
@@ -335,8 +364,8 @@ def _read_entry(bundle: zipfile.ZipFile, name: str, limit: int) -> bytes | None:
         return None
 
 
-def parse_slice_info(xml_bytes: bytes) -> tuple[int | None, list[FilamentInfo]]:
-    """Parse slice_info.config into the plate id and its filaments.
+def parse_slice_info(xml_bytes: bytes) -> SliceInfo:
+    """Parse slice_info.config into everything one plate says about itself.
 
     Only the first plate is read. A Bambu print job covers exactly one plate,
     and the plate id is what names the preview image and the gcode entry.
@@ -349,13 +378,12 @@ def parse_slice_info(xml_bytes: bytes) -> tuple[int | None, list[FilamentInfo]]:
 
     plate = root.find(".//plate")
     if plate is None:
-        return None, []
+        return SliceInfo()
 
-    plate_id = None
-    for metadata in plate.findall("metadata"):
-        if metadata.get("key") == PLATE_INDEX_KEY:
-            plate_id = _to_int(metadata.get("value"))
-            break
+    values = {
+        element.get("key"): element.get("value")
+        for element in plate.findall("metadata")
+    }
 
     filaments = []
     for element in plate.findall("filament"):
@@ -373,7 +401,28 @@ def parse_slice_info(xml_bytes: bytes) -> tuple[int | None, list[FilamentInfo]]:
             )
         )
 
-    return plate_id, filaments
+    # An object element per model on the plate. None rather than zero where the
+    # file names none, because "no objects" is not something a plate can be.
+    objects = len(plate.findall("object")) or None
+
+    return SliceInfo(
+        plate_id=_to_int(values.get(PLATE_INDEX_KEY)),
+        filaments=filaments,
+        estimated_seconds=_to_int(values.get(PREDICTION_KEY)),
+        object_count=objects,
+        nozzle_diameter=_first_number(values.get(NOZZLE_DIAMETERS_KEY)),
+    )
+
+
+def _first_number(value: str | None) -> float | None:
+    """The first of a comma separated list of numbers.
+
+    A dual nozzle machine reports both diameters here, and the plugin has one
+    field for it. The first is the one that printed the first filament.
+    """
+    if not value:
+        return None
+    return _to_float(value.split(",")[0].strip())
 
 
 def _to_int(value: str | None) -> int | None:

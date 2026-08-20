@@ -93,6 +93,11 @@ class PrintRecord(BaseModel):
     # How many layers the print has, taken from the curves read out of its
     # gcode. None when there are none.
     layer_count: int | None = None
+    # What the slicer said before the print started. None where its 3MF could
+    # not be read.
+    estimated_seconds: int | None = None
+    object_count: int | None = None
+    nozzle_diameter: float | None = None
     # What the print cost, in FilaMan's currency. None when no spool involved
     # carries the numbers to work it out.
     cost: float | None = None

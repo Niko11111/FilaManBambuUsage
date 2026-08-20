@@ -451,6 +451,21 @@
       border-radius: var(--radius-sm);
     }
 
+    .icon {
+      width: 1.05em;
+      height: 1.05em;
+      flex: none;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    /* Every fact and every badge becomes a small row of icon plus word, which
+       is also what keeps the two aligned when the line wraps. */
+    .print-meta span, .badge { display: inline-flex; align-items: center; gap: 6px; }
+    .icon-button .icon { width: 1.1em; height: 1.1em; }
+
     .print-preview { cursor: zoom-in; }
 
     .picker { min-width: min(620px, 78vw); }
@@ -587,6 +602,28 @@
     <footer data-i18n="page.footer"></footer>
   </div>
 
+  <!-- The icon set. Inline, because the plugin ZIP rejects .svg files, and as
+       templates so icon() can clone one without innerHTML. Every one of them
+       draws in currentColor and therefore in the colour of whatever it sits
+       next to, in all three themes. -->
+    <template id="icon-printer"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 15h12v6H6z"/></svg></template>
+    <template id="icon-cloud"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 18a4.5 4.5 0 0 1 .4-9 5.5 5.5 0 0 1 10.5 1.3A3.9 3.9 0 0 1 17.5 18z"/></svg></template>
+    <template id="icon-drive"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 13h18"/><path d="M7.5 16.5h.01"/></svg></template>
+    <template id="icon-clock"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.3l3.2 2"/></svg></template>
+    <template id="icon-layers"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3 7.5 12 12l9-4.5L12 3z"/><path d="m3 12.5 9 4.5 9-4.5"/><path d="m3 17 9 4.5 9-4.5"/></svg></template>
+    <template id="icon-weight"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5V8z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg></template>
+    <template id="icon-tag"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.4 12.9 21a1.9 1.9 0 0 1-2.7 0l-7.1-7.1V3h10.9l6.6 6.6a2.7 2.7 0 0 1 0 3.8z"/><path d="M7.5 7.5h.01"/></svg></template>
+    <template id="icon-objects"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8.5" r="4.5"/><rect x="12.5" y="12.5" width="8" height="8" rx="1.5"/></svg></template>
+    <template id="icon-nozzle"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v5.5l-4 12.5h-2L7 8.5V3z"/><path d="M7 8.5h10"/></svg></template>
+    <template id="icon-pencil"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20.5h4.2l10.4-10.4a3 3 0 0 0-4.2-4.2L4 16.3v4.2z"/><path d="m13.8 7.2 3 3"/></svg></template>
+    <template id="icon-close"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11"/><path d="m17.5 6.5-11 11"/></svg></template>
+    <template id="icon-trash"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M10 7V4h4v3"/><path d="m6.5 7 1 13h9l1-13"/></svg></template>
+    <template id="icon-search"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.6-4.6"/></svg></template>
+    <template id="icon-check"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 13 4.5 4.5L19 6.5"/></svg></template>
+    <template id="icon-failed"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6"/><path d="m15 9-6 6"/></svg></template>
+    <template id="icon-running"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="currentColor" stroke="none"/></svg></template>
+    <template id="icon-warning"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.5 20.5h19L12 3.5z"/><path d="M12 10v4.2"/><path d="M12 17.5h.01"/></svg></template>
+
   <div class="overlay" id="overlay" hidden>
     <div class="overlay-box" id="overlay-box"></div>
   </div>
@@ -632,9 +669,17 @@
         local: 'printType.local'
       };
 
-      // Glyphs, not words: each carries its meaning in a translated title.
-      var PENCIL = '\u270e';
-      var CLOSE = '×';
+      // Which icon says what. Written out rather than built from the value, so
+      // a missing one is a missing template and not a silent blank.
+      var TYPE_ICONS = { cloud: 'cloud', local: 'drive' };
+      var STATUS_ICONS = {
+        running: 'running',
+        finished: 'check',
+        failed: 'failed',
+        cancelled: 'failed',
+        incomplete: 'warning',
+        no_3mf: 'warning'
+      };
 
       var dictionary = {};
       var spools = new Map();
@@ -757,6 +802,19 @@
       }
 
       /* ── small builders ──────────────────────────────────────── */
+
+      function icon(name) {
+        // Cloned from a template rather than built: an SVG element needs its
+        // namespace, and createElement would quietly produce an HTML one.
+        var template = document.getElementById('icon-' + name);
+        return template ? template.content.firstElementChild.cloneNode(true) : null;
+      }
+
+      function withIcon(node, name) {
+        var drawing = icon(name);
+        if (drawing) node.insertBefore(drawing, node.firstChild);
+        return node;
+      }
 
       function el(tag, className, text) {
         var node = document.createElement(tag);
@@ -1133,6 +1191,7 @@
         var badges = el('div', 'print-badges');
         var key = STATUS_KEYS[record.status];
         var badge = el('span', 'badge status', key ? t(key) : record.status);
+        if (STATUS_ICONS[record.status]) withIcon(badge, STATUS_ICONS[record.status]);
         if (isRunning) badge.classList.add('live');
         if (GOOD_STATUS[record.status]) badge.classList.add('good');
         if (BAD_STATUS[record.status]) badge.classList.add('bad');
@@ -1146,16 +1205,16 @@
         }
 
         if (record.spent) {
-          badges.appendChild(el('span', 'badge good', t('history.stateBooked')));
+          badges.appendChild(withIcon(el('span', 'badge good', t('history.stateBooked')), 'check'));
         } else if (unassigned(record)) {
-          badges.appendChild(el('span', 'badge open', t('history.openWork')));
+          badges.appendChild(withIcon(el('span', 'badge open', t('history.openWork')), 'warning'));
         }
 
         if (record.cost !== null && record.cost !== undefined) {
-          badges.appendChild(el('span', 'badge', t('history.cost', {
+          badges.appendChild(withIcon(el('span', 'badge', t('history.cost', {
             amount: record.cost.toFixed(2),
             currency: currency
-          })));
+          })), 'tag'));
         }
 
         var soFar = usedSoFar(record);
@@ -1193,22 +1252,52 @@
 
       function printFacts(record) {
         var facts = el('div', 'print-meta');
-        facts.appendChild(el('span', null, printerName(record.printer_id)));
+        var add = function (text, name) {
+          if (text) facts.appendChild(withIcon(el('span', null, text), name));
+        };
+
+        add(printerName(record.printer_id), 'printer');
 
         if (record.print_type) {
           var typeKey = PRINT_TYPE_KEYS[record.print_type];
-          facts.appendChild(el('span', null, typeKey ? t(typeKey) : record.print_type));
+          add(typeKey ? t(typeKey) : record.print_type, TYPE_ICONS[record.print_type] || 'cloud');
         }
 
         facts.appendChild(el('span', null, timespan(record)));
 
-        var ran = duration(record);
-        if (ran) facts.appendChild(el('span', null, ran));
+        // What it took where it is over, what the slicer promised where it is
+        // not. Two answers to one question, so only ever one of them shows.
+        add(duration(record) || estimate(record), 'clock');
+        add(totalGrams(record), 'weight');
 
         if (record.layer_count) {
-          facts.appendChild(el('span', null, t('history.layers', { count: record.layer_count })));
+          add(t('history.layers', { count: record.layer_count }), 'layers');
+        }
+        if (record.object_count) {
+          add(t(record.object_count === 1 ? 'history.object' : 'history.objects', {
+            count: record.object_count
+          }), 'objects');
+        }
+        if (record.nozzle_diameter) {
+          add(t('history.nozzle', { mm: record.nozzle_diameter }), 'nozzle');
         }
         return facts;
+      }
+
+      function totalGrams(record) {
+        // The sum of the rows rather than a stored total: the same number, and
+        // one that stays right when a row is corrected by hand.
+        var total = null;
+        record.filaments.forEach(function (usage) {
+          if (usage.estimated_grams === null || usage.estimated_grams === undefined) return;
+          total = (total || 0) + usage.estimated_grams;
+        });
+        return total === null ? null : grams(total);
+      }
+
+      function estimate(record) {
+        if (!record.estimated_seconds) return null;
+        return t('history.estimate', { duration: humanMinutes(Math.round(record.estimated_seconds / 60)) });
       }
 
       function duration(record) {
@@ -1222,6 +1311,10 @@
         // negative duration says less than nothing.
         if (minutes < 0) return null;
 
+        return humanMinutes(minutes);
+      }
+
+      function humanMinutes(minutes) {
         var hours = Math.floor(minutes / 60);
         return hours
           ? t('history.durationHours', { hours: hours, minutes: minutes % 60 })
@@ -1285,7 +1378,7 @@
         text.appendChild(el('div', 'filament-figures', filamentFigures(usage)));
         block.appendChild(text);
 
-        var edit = el('button', 'icon-button', PENCIL);
+        var edit = withIcon(el('button', 'icon-button'), 'pencil');
         edit.type = 'button';
         edit.title = t('history.edit');
         edit.setAttribute('aria-label', t('history.edit'));
@@ -1569,7 +1662,7 @@
       }
 
       function closeButton() {
-        var button = el('button', 'icon-button overlay-close', CLOSE);
+        var button = withIcon(el('button', 'icon-button overlay-close'), 'close');
         button.type = 'button';
         button.title = t('page.close');
         button.setAttribute('aria-label', t('page.close'));

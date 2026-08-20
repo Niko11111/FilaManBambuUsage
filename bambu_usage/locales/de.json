@@ -51,7 +51,11 @@
     "edit": "Spule oder Menge ändern",
     "usedSoFar": "bisher {grams}",
     "durationHours": "{hours} h {minutes} min",
-    "durationMinutes": "{minutes} min"
+    "durationMinutes": "{minutes} min",
+    "object": "{count} Objekt",
+    "objects": "{count} Objekte",
+    "nozzle": "{mm} mm Düse",
+    "estimate": "geschätzt {duration}"
   },
   "printType": {
     "cloud": "Cloud-Druck",

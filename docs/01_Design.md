@@ -320,10 +320,17 @@ so the dictionaries ship inside the package. See section 9.
 ### 8.2 What the page shows
 
 **History** as the main view. One card per print: the preview image, the file
-name and the outcome as a badge, a line of facts underneath (printer, whether
-the job came from the cloud or from the printer itself, when it ran and for how
-long, how many layers), and then one block per filament with its colour, its
-slot, the spool it was booked against and the two weights.
+name and the outcome as a badge, a line of facts underneath, and then one block
+per filament with its colour, its slot, the spool it was booked against and the
+two weights.
+
+The facts are printer, whether the job came from the cloud or from the printer
+itself, when it ran, how long it took (or what the slicer predicted while it is
+still running), how much material, how many layers, how many objects and which
+nozzle. Each carries a small monochrome icon. They live inline in `page.html` as
+`<template>` elements, because the plugin ZIP rejects `.svg`, and every one of
+them draws in `currentColor` so it takes the colour of whatever it sits next
+to, in all three themes.
 
 While a print runs its card is fetched again on every poll, so what it has used
 so far grows with it; the finished list below is left alone and keeps however

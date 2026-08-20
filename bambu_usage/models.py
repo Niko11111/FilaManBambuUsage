@@ -120,6 +120,11 @@ prints_table = Table(
     # Which layer the printer was on when the print stopped, so the curve can
     # be read at the right place long after the fact.
     Column("stopped_at_layer", Integer, nullable=True),
+    # What the slicer said about the plate, for the history to show. None where
+    # the 3MF could not be read, which is why all three are nullable.
+    Column("estimated_seconds", Integer, nullable=True),
+    Column("object_count", Integer, nullable=True),
+    Column("nozzle_diameter", Float, nullable=True),
     Column("spent", Boolean, nullable=False, default=False),
     Column("thumbnail", LargeBinary, nullable=True),
     Column("thumbnail_mime", String(50), nullable=True),

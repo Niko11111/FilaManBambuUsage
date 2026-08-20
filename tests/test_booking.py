@@ -139,6 +139,22 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
         # Nothing is booked at the start, only recorded.
         self.assertEqual(self.consumptions, [])
 
+    async def test_a_starting_print_keeps_what_the_slicer_said(self):
+        # Shown in the history and nowhere else, so nothing depends on it, but
+        # a print that loses it cannot get it back: the 3MF is gone by then.
+        metadata = self.two_filaments()
+        metadata.estimated_seconds = 7412
+        metadata.object_count = 3
+        metadata.nozzle_diameter = 0.4
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1], metadata=metadata)
+            record = await store.get_print(db, print_id)
+
+        self.assertEqual(record.estimated_seconds, 7412)
+        self.assertEqual(record.object_count, 3)
+        self.assertAlmostEqual(record.nozzle_diameter, 0.4)
+
     async def test_the_same_message_twice_creates_one_print(self):
         async with self.sessions() as db:
             first = await self.start(db, [0, 1])

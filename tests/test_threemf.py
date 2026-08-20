@@ -40,7 +40,9 @@ ANOTHER_PNG = ONE_PIXEL_PNG + b"\x00"
 class ParseSliceInfoTest(unittest.TestCase):
     def setUp(self):
         raw = (FIXTURES_DIR / "slice_info.config").read_bytes()
-        self.plate_id, self.filaments = parse_slice_info(raw)
+        self.info = parse_slice_info(raw)
+        self.plate_id = self.info.plate_id
+        self.filaments = self.info.filaments
 
     def test_reads_the_plate_id(self):
         # Names the preview image (plate_1.png) and the gcode entry.
@@ -71,42 +73,70 @@ class ParseSliceInfoTest(unittest.TestCase):
         # The fixture also holds header, object and other metadata entries.
         self.assertEqual(len(self.filaments), 2)
 
+    def test_reads_what_the_slicer_predicts(self):
+        self.assertEqual(self.info.estimated_seconds, 7412)
+
+    def test_counts_the_objects_on_the_plate(self):
+        self.assertEqual(self.info.object_count, 1)
+
+    def test_reads_the_nozzle_it_was_sliced_for(self):
+        self.assertAlmostEqual(self.info.nozzle_diameter, 0.4)
+
 
 class ParseSliceInfoRobustnessTest(unittest.TestCase):
     """The file comes off a printer, so it is treated as foreign data."""
 
     def test_no_plate_yields_nothing(self):
-        plate_id, filaments = parse_slice_info(b"<config><header/></config>")
-        self.assertIsNone(plate_id)
-        self.assertEqual(filaments, [])
+        info = parse_slice_info(b"<config><header/></config>")
+        self.assertIsNone(info.plate_id)
+        self.assertEqual(info.filaments, [])
 
     def test_missing_plate_index_is_tolerated(self):
-        plate_id, filaments = parse_slice_info(
+        info = parse_slice_info(
             b'<config><plate><filament id="1" used_g="5"/></plate></config>'
         )
-        self.assertIsNone(plate_id)
-        self.assertEqual(len(filaments), 1)
+        self.assertIsNone(info.plate_id)
+        self.assertEqual(len(info.filaments), 1)
+
+    def test_a_plate_without_objects_counts_none_not_zero(self):
+        info = parse_slice_info(b'<config><plate><filament id="1"/></plate></config>')
+        self.assertIsNone(info.object_count)
+
+    def test_two_nozzles_keep_the_first(self):
+        # An H2D reports both diameters here and the plugin has one field.
+        info = parse_slice_info(
+            b'<config><plate><metadata key="nozzle_diameters" value="0.4,0.6"/></plate></config>'
+        )
+        self.assertAlmostEqual(info.nozzle_diameter, 0.4)
+
+    def test_an_unreadable_prediction_becomes_none(self):
+        info = parse_slice_info(
+            b'<config><plate><metadata key="prediction" value="soon"/></plate></config>'
+        )
+        self.assertIsNone(info.estimated_seconds)
 
     def test_unparsable_numbers_become_none_instead_of_raising(self):
-        _, filaments = parse_slice_info(
+        filaments = parse_slice_info(
             b'<config><plate><filament id="1" used_g="n/a" used_m=""/></plate></config>'
-        )
+        ).filaments
         self.assertIsNone(filaments[0].used_g)
         self.assertIsNone(filaments[0].used_m)
 
     def test_filament_without_usable_id_is_skipped(self):
         # Without an id it cannot be mapped to a tray, so keeping it would only
         # produce a row nobody can resolve.
-        _, filaments = parse_slice_info(
+        filaments = parse_slice_info(
             b'<config><plate>'
             b'<filament type="PLA" used_g="5"/>'
             b'<filament id="2" used_g="6"/>'
             b'</plate></config>'
-        )
+        ).filaments
         self.assertEqual([f.filament_id for f in filaments], [2])
 
     def test_missing_attributes_are_none_not_absent(self):
-        _, filaments = parse_slice_info(b'<config><plate><filament id="1"/></plate></config>')
+        filaments = parse_slice_info(
+            b'<config><plate><filament id="1"/></plate></config>'
+        ).filaments
         only = filaments[0]
         self.assertIsNone(only.material)
         self.assertIsNone(only.color_hex)

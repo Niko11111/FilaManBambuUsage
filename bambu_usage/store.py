@@ -68,6 +68,9 @@ async def create_print(
     thumbnail_mime: str | None = None,
     error: str | None = None,
     layer_shares: dict[int, list[float]] | None = None,
+    estimated_seconds: int | None = None,
+    object_count: int | None = None,
+    nozzle_diameter: float | None = None,
 ) -> int:
     """Insert one print and return its id.
 
@@ -88,6 +91,9 @@ async def create_print(
             thumbnail_mime=thumbnail_mime,
             error=error,
             layer_shares=json.dumps(layer_shares) if layer_shares else None,
+            estimated_seconds=estimated_seconds,
+            object_count=object_count,
+            nozzle_diameter=nozzle_diameter,
         )
     )
     return int(result.inserted_primary_key[0])
