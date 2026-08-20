@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from ._support import HAS_TEST_DEPENDENCIES
 
 if HAS_TEST_DEPENDENCIES:
+    from sqlalchemy import text
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlalchemy.pool import StaticPool
 
@@ -50,6 +51,28 @@ class StoreTest(unittest.IsolatedAsyncioTestCase):
         }
         values.update(overrides)
         return await store.create_print(db, **values)
+
+    async def test_a_column_added_later_reaches_an_existing_table(self):
+        """The update path: a table created by an older version gains a column.
+
+        create_all() would not notice, and every query naming the column would
+        fail on exactly the instances that have history worth keeping.
+        """
+        async with self.engine.begin() as connection:
+            await connection.execute(
+                text(f"ALTER TABLE {models.prints_table.name} DROP COLUMN completed_fraction")
+            )
+
+        await models.ensure_tables(self.engine)
+
+        async with self.sessions() as db:
+            print_id = await self.make_print(db)
+            await store.set_print_status(
+                db, print_id, models.STATUS_FAILED, completed_fraction=0.5
+            )
+            await db.commit()
+
+            self.assertEqual((await store.get_print(db, print_id)).completed_fraction, 0.5)
 
     async def test_a_print_comes_back_as_it_went_in(self):
         async with self.sessions() as db:

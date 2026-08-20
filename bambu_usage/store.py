@@ -224,13 +224,21 @@ async def set_print_status(
     status: str,
     finished_at: datetime | None = None,
     error: str | None = None,
+    completed_fraction: float | None = None,
 ) -> None:
-    """Move a print to *status*, optionally recording when and why it ended."""
+    """Move a print to *status*, optionally recording when and why it ended.
+
+    *completed_fraction* is what makes a booking possible for a print that was
+    stopped: it is stored rather than used on the spot, so that booking it later
+    by hand uses the same number.
+    """
     values: dict[str, Any] = {"status": status}
     if finished_at is not None:
         values["finished_at"] = finished_at
     if error is not None:
         values["error"] = error
+    if completed_fraction is not None:
+        values["completed_fraction"] = completed_fraction
 
     await db.execute(update(prints_table).where(prints_table.c.id == print_id).values(**values))
 

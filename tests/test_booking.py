@@ -184,7 +184,28 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.consumptions, [])
             self.assertEqual((await store.get_print(db, print_id)).status, models.STATUS_FAILED)
 
-    async def test_an_abort_is_booked_when_the_setting_says_so(self):
+    async def test_an_abort_books_the_share_it_got_through(self):
+        # Half the layers, half the estimate. Booking the full amount is what
+        # OpenSpoolMan gets wrong, booking nothing leaves the spool wrong.
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            await service.finish_print(
+                db, print_id, models.STATUS_FAILED, AUTO_WITH_CANCEL, NOW, completed_fraction=0.5
+            )
+
+            rows = await store.list_filaments(db, print_id)
+
+        self.assertEqual(sorted(self.consumptions), [(7, 20.6, "cube.3mf"), (8, 6.25, "cube.3mf")])
+        # The slicer estimate stays untouched, only what was booked is the share.
+        self.assertEqual([row.estimated_grams for row in rows], [41.2, 12.5])
+        self.assertEqual([row.spent_grams for row in rows], [20.6, 6.25])
+
+    async def test_an_abort_without_a_known_share_books_nothing(self):
+        # A printer that never reported its progress leaves us guessing, and a
+        # guess on a spool is worse than a row somebody can correct by hand.
         self.slots = {"0-0": 7, "0-1": 8}
         self.have_spools(7, 8)
 
@@ -192,7 +213,23 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
             print_id = await self.start(db, [0, 1])
             await service.finish_print(db, print_id, models.STATUS_FAILED, AUTO_WITH_CANCEL, NOW)
 
-        self.assertEqual(len(self.consumptions), 2)
+            self.assertEqual(self.consumptions, [])
+            self.assertFalse((await store.get_print(db, print_id)).spent)
+
+    async def test_the_share_survives_for_a_later_booking_by_hand(self):
+        # auto_spend off: the history offers the button, and it has to book the
+        # same share the automatic path would have.
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            await service.finish_print(
+                db, print_id, models.STATUS_FAILED, MANUAL, NOW, completed_fraction=0.25
+            )
+            booked = await service.spend_print(db, print_id)
+
+        self.assertEqual(booked, {7: 10.3, 8: 3.125})
 
     async def test_auto_spend_off_records_everything_and_books_nothing(self):
         self.slots = {"0-0": 7, "0-1": 8}

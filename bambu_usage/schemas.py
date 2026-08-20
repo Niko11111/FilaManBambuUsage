@@ -23,7 +23,10 @@ class PluginSettings(BaseModel):
     printer_id: int = Field(default=0, ge=0)
     tracking_enabled: bool = True
     auto_spend: bool = True
-    spend_on_cancel: bool = False
+    # On by default, because what a stopped print used is booked in proportion
+    # to how far it got, not as the full estimate. Booking nothing would leave
+    # the spool wrong after every abort.
+    spend_on_cancel: bool = True
     clear_assignment_when_empty: bool = False
     history_retention_days: int = Field(default=365, ge=0)
 
@@ -73,6 +76,8 @@ class PrintRecord(BaseModel):
     finished_at: datetime | None = None
     status: str
     spent: bool
+    # How far a print that did not finish got, 0.0 to 1.0. None when unknown.
+    completed_fraction: float | None = None
     has_thumbnail: bool = False
     error: str | None = None
     filaments: list[FilamentUsage] = Field(default_factory=list)

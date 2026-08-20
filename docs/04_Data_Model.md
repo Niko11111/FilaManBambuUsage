@@ -24,6 +24,16 @@ Because the tables live in the database and not in the plugin folder, they
 survive a ZIP update. Uninstalling the plugin leaves them in place, and that is
 intended: a later reinstall finds the history again.
 
+**Surviving an update means more than creating what is missing.**
+`create_all(checkfirst=True)` only ever creates whole tables, so a column added
+in a later version of this plugin would simply be absent on an instance that
+already ran an earlier one, and every query naming it would fail. `ensure_tables`
+therefore also compares the columns and adds what is missing. Only nullable
+columns can be added that way, which is what the additive-only rule amounts to
+in practice: a NOT NULL column would need a value for every row that already
+exists, and inventing one is how history gets corrupted. Such a column is
+refused loudly instead.
+
 ## 2. Read from FilaMan
 
 From `app/models/printer.py` and `app/models/spool.py`, read only.
@@ -105,7 +115,7 @@ One row per printer, plus a global row with `printer_id = 0`.
 | `printer_id` | int, PK | | `0` means global |
 | `tracking_enabled` | bool | `true` | start a listener at all |
 | `auto_spend` | bool | `true` | deduct automatically. Counterpart to `AUTO_SPEND` |
-| `spend_on_cancel` | bool | `false` | deduct on abort as well |
+| `spend_on_cancel` | bool | `true` | deduct an abort as well, at the share it got through, see `01_Design.md` 6.3 |
 | `clear_assignment_when_empty` | bool | `false` | counterpart to `CLEAR_ASSIGNMENT_WHEN_EMPTY` |
 | `history_retention_days` | int | `365` | `0` means unlimited |
 | `updated_at` | datetime | | |
@@ -129,6 +139,7 @@ One print job.
 | `started_at` | datetime | |
 | `finished_at` | datetime, nullable | |
 | `status` | str | `running`, `finished`, `failed`, `cancelled`, `incomplete`, `no_3mf` |
+| `completed_fraction` | float, nullable | how far a print that was stopped got, `0.0` to `1.0`. `NULL` means unknown, and then nothing is booked |
 | `spent` | bool | whether it has already been deducted |
 | `thumbnail` | blob, nullable | `Metadata/plate_<N>.png` |
 | `thumbnail_mime` | str, nullable | in practice `image/png` |

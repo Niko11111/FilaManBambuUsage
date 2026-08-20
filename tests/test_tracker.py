@@ -23,6 +23,7 @@ from bambu_usage.tracker import (
     STATE_RUNNING,
     TRANSITION_ENDED,
     TRANSITION_STARTED,
+    completed_fraction,
     describe_job,
     detect_transition,
     merge_report,
@@ -182,6 +183,32 @@ class ProgressTest(unittest.TestCase):
     def test_no_percentage(self):
         self.assertIsNone(progress_of(report(gcode_state=STATE_RUNNING)))
         self.assertIsNone(progress_of(report(mc_percent="almost")))
+
+
+class CompletedFractionTest(unittest.TestCase):
+    """How far a print got, for booking what a stopped print actually used."""
+
+    def test_layers_come_first(self):
+        # A layer is a better proxy for material than time is, and mc_percent
+        # on a Bambu is progress in time.
+        state = report(layer_num=50, total_layer_num=200, mc_percent=40)
+        self.assertEqual(completed_fraction(state), 0.25)
+
+    def test_the_percentage_stands_in_when_layers_are_missing(self):
+        self.assertEqual(completed_fraction(report(mc_percent=40)), 0.4)
+
+    def test_no_progress_at_all_is_not_zero_but_unknown(self):
+        # Zero would book nothing quietly; None says so, and the caller decides.
+        self.assertIsNone(completed_fraction(report(gcode_state=STATE_RUNNING)))
+
+    def test_a_print_without_layers_yet(self):
+        self.assertIsNone(completed_fraction(report(layer_num=0, total_layer_num=0)))
+
+    def test_more_layers_than_the_total(self):
+        self.assertEqual(completed_fraction(report(layer_num=205, total_layer_num=200)), 1.0)
+
+    def test_numbers_written_as_text(self):
+        self.assertEqual(completed_fraction(report(layer_num="1", total_layer_num="4")), 0.25)
 
 
 if __name__ == "__main__":

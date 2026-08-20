@@ -207,10 +207,46 @@ def describe_job(state: dict) -> PrintJob:
 
 def progress_of(state: dict) -> int | None:
     """Percent complete, for the status line. None when it is not a number."""
+    return _as_int(state.get(PRINT_SECTION, {}).get("mc_percent"))
+
+
+def completed_fraction(state: dict) -> float | None:
+    """How far the print got, as a share between 0 and 1, or None if unknown.
+
+    Layers come first, because a layer is a better proxy for material than time
+    is, and ``mc_percent`` on a Bambu is progress in time. Both are still
+    approximations: a dense bottom layer weighs more than a sparse one in the
+    middle. The exact answer needs the cumulative extrusion per layer out of the
+    plate gcode, which is a later stage; see docs/01_Design.md section 10.
+
+    None is a real answer and not a failure. A stopped print whose progress was
+    never reported is left unbooked rather than charged a made up amount.
+    """
+    section = state.get(PRINT_SECTION, {})
+
+    layer = _as_int(section.get("layer_num"))
+    total = _as_int(section.get("total_layer_num"))
+    if layer is not None and total:
+        return _clamp(layer / total)
+
+    percent = _as_int(section.get("mc_percent"))
+    if percent is not None:
+        return _clamp(percent / 100)
+
+    return None
+
+
+def _as_int(value: Any) -> int | None:
+    """Read a number a printer reported, tolerating text and nonsense."""
     try:
-        return int(state.get(PRINT_SECTION, {}).get("mc_percent"))
+        return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _clamp(share: float) -> float:
+    """Keep a share inside 0 to 1, whatever the printer counted."""
+    return min(max(share, 0.0), 1.0)
 
 
 @dataclass
@@ -449,7 +485,14 @@ class PrinterListener:
                 return
 
             config = await settings.load_settings(db, self.printer_id)
-            await service.finish_print(db, print_id, status, config, at)
+            await service.finish_print(
+                db,
+                print_id,
+                status,
+                config,
+                at,
+                completed_fraction=completed_fraction(self.state),
+            )
 
         logger.info("printer %s: print %s ended as %s", self.printer_id, print_id, status)
         self.current_print_id = None

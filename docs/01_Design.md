@@ -211,10 +211,22 @@ The price is holding state across the duration of the print. That state
 therefore lives in the database, not in memory: if FilaMan restarts mid print,
 the plugin finds the open print again and can close it on the next `FINISH`.
 
-Deducting a proportion of the estimate on abort, using `mc_percent`, is
-conceivable. It is deliberately **not** part of stage 1, because percentage
-progress is not linear in material used. The aborted print lands in the history
-with its estimate and a correction field instead.
+**An aborted print costs the share it got through.** Booking nothing leaves the
+spool wrong after every abort, and booking the full estimate is what OpenSpoolMan
+gets wrong. The share comes from `layer_num / total_layer_num`, falling back to
+`mc_percent`, and it is stored on the print so that booking it later by hand
+uses the same number.
+
+Both are approximations: a dense bottom layer weighs more than a sparse one in
+the middle, and `mc_percent` is progress in **time**, not in material. Layers are
+preferred for exactly that reason. The exact answer needs the cumulative
+extrusion per layer out of the plate gcode, and that is a later stage, see
+section 10.
+
+**A share that is unknown books nothing.** A printer that never reported its
+progress leaves the row open for a correction rather than getting a made up
+number, because an invented amount on a spool cannot be told apart from a real
+one afterwards.
 
 ## 7. Failure cases
 
@@ -276,7 +288,7 @@ variables:
 |---|---|---|
 | Tracking enabled | none, new | on |
 | Deduct automatically | `AUTO_SPEND` | on |
-| Deduct on abort | none, new | off |
+| Deduct on abort | none, new | on, and only the share that ran |
 | Clear assignment when empty | `CLEAR_ASSIGNMENT_WHEN_EMPTY` | off |
 | Keep history (days) | none, new | 365 |
 
@@ -333,7 +345,9 @@ assignment after the fact.
 switched off, filament order from the plate gcode.
 
 **Stage 4, open.** Per layer tracking as the counterpart to
-`TRACK_LAYER_USAGE`, proportional deduction on abort.
+`TRACK_LAYER_USAGE`: the cumulative extrusion per layer read out of the plate
+gcode, which turns the share an aborted print is booked at from an approximation
+into the exact amount up to the layer it stopped on.
 
 **Independently of all that**, three questions for Fire-Devils:
 

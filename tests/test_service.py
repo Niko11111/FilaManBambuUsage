@@ -10,6 +10,7 @@ import unittest
 
 from bambu_usage.service import (
     EXTERNAL_SLOT_INDEX,
+    booking_factor,
     EXTERNAL_SPOOL_AMS_ID,
     EXTERNAL_SPOOL_TRAY_ID,
     TRAYS_PER_AMS,
@@ -138,6 +139,28 @@ class ShouldSpendTest(unittest.TestCase):
 
     def test_an_abort_is_booked_when_asked_for(self):
         self.assertTrue(should_spend(finished_normally=False, auto_spend=True, spend_on_cancel=True))
+
+
+class BookingFactorTest(unittest.TestCase):
+    """What share of the estimate a print costs."""
+
+    def test_a_print_that_ran_to_the_end_costs_all_of_it(self):
+        self.assertEqual(booking_factor(was_stopped=False, completed_fraction=None), 1.0)
+        # A share reported for a finished print changes nothing.
+        self.assertEqual(booking_factor(was_stopped=False, completed_fraction=0.5), 1.0)
+
+    def test_a_stopped_print_costs_its_share(self):
+        self.assertEqual(booking_factor(was_stopped=True, completed_fraction=0.5), 0.5)
+
+    def test_a_stopped_print_with_no_share_costs_nothing(self):
+        # Not the full estimate. That is the mistake this exists to avoid.
+        self.assertEqual(booking_factor(was_stopped=True, completed_fraction=None), 0.0)
+
+    def test_a_share_outside_the_range_is_pulled_back_in(self):
+        # A printer can report nonsense, and a factor above one would deduct
+        # more than the print could possibly have used.
+        self.assertEqual(booking_factor(was_stopped=True, completed_fraction=1.4), 1.0)
+        self.assertEqual(booking_factor(was_stopped=True, completed_fraction=-0.2), 0.0)
 
 
 if __name__ == "__main__":

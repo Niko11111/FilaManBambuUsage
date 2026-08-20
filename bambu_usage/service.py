@@ -156,6 +156,26 @@ def should_spend(*, finished_normally: bool, auto_spend: bool, spend_on_cancel: 
     return spend_on_cancel
 
 
+def booking_factor(*, was_stopped: bool, completed_fraction: float | None) -> float:
+    """What share of the estimate a print costs.
+
+    A print that ran to the end costs all of it. One that was stopped costs the
+    share it got through, and **nothing at all** when that share is unknown: an
+    invented number on a spool is worse than an open row somebody can correct,
+    and it is exactly the mistake of booking the full estimate for an abort.
+
+    A print this plugin only saw part of is not "stopped" in this sense. It is
+    never booked automatically, and when a human books it anyway that is a
+    decision, so it costs the full estimate.
+    """
+    if not was_stopped:
+        return 1.0
+    if completed_fraction is None:
+        return 0.0
+
+    return min(max(float(completed_fraction), 0.0), 1.0)
+
+
 async def start_print(
     db: AsyncSession,
     *,
@@ -259,6 +279,7 @@ async def finish_print(
     status: str,
     settings: PluginSettings,
     finished_at: datetime | None = None,
+    completed_fraction: float | None = None,
 ) -> None:
     """Close a print and book it if the settings allow.
 
@@ -286,7 +307,9 @@ async def finish_print(
         await db.commit()
         return
 
-    await store.set_print_status(db, print_id, status, finished_at=moment)
+    await store.set_print_status(
+        db, print_id, status, finished_at=moment, completed_fraction=completed_fraction
+    )
     await db.commit()
 
     if not should_spend(
@@ -316,14 +339,20 @@ async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
     from sqlalchemy.exc import SQLAlchemyError
 
     from . import filaman, store
+    from .models import STOPPED_STATUSES
 
     record = await store.get_print(db, print_id)
     if record is None:
         raise UsageError(f"print {print_id} does not exist")
 
+    factor = booking_factor(
+        was_stopped=record.status in STOPPED_STATUSES,
+        completed_fraction=record.completed_fraction,
+    )
+
     rows = await store.list_filaments(db, print_id)
     pending = [row for row in rows if row.spool_id is not None and row.spent_at is None]
-    totals = sum_grams_per_spool((row.spool_id, _amount_of(row)) for row in pending)
+    totals = sum_grams_per_spool((row.spool_id, _share_of(row, factor)) for row in pending)
 
     moment = record.finished_at or datetime.now(timezone.utc)
     booked: dict[int, float] = {}
@@ -340,7 +369,7 @@ async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
             # A row without an amount is marked at zero rather than left open,
             # otherwise its print would never count as fully booked.
             for row in (r for r in pending if r.spool_id == spool_id):
-                await store.mark_filament_spent(db, row.id, _amount_of(row) or 0.0, moment)
+                await store.mark_filament_spent(db, row.id, _share_of(row, factor) or 0.0, moment)
             await filaman.record_consumption(db, spool, grams, moment, record.file_name)
         except (SQLAlchemyError, filaman.FilaManUnavailableError):
             await db.rollback()
@@ -465,6 +494,7 @@ async def get_history(db: AsyncSession, limit: int = 50, offset: int = 0) -> lis
                 finished_at=entry.finished_at,
                 status=entry.status,
                 spent=bool(entry.spent),
+                completed_fraction=entry.completed_fraction,
                 has_thumbnail=entry.thumbnail_mime is not None,
                 error=entry.error,
                 filaments=filaments,
@@ -513,6 +543,12 @@ async def get_thumbnail(db: AsyncSession, print_id: int) -> tuple[bytes, str] | 
 # Note written to the spool log when an amount was corrected by hand. The file
 # name of the print is the note on a normal booking, see spend_print.
 _CORRECTION_NOTE = "correction"
+
+
+def _share_of(row: Any, factor: float) -> float | None:
+    """What a row costs once the share of the print is taken into account."""
+    amount = _amount_of(row)
+    return None if amount is None else amount * factor
 
 
 def _amount_of(row: Any) -> float | None:

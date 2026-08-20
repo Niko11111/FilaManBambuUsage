@@ -24,7 +24,7 @@ Enforced by tools/check_architecture.py.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     Boolean,
@@ -40,7 +40,9 @@ from sqlalchemy import (
     UniqueConstraint,
     delete,
     func,
+    inspect,
     select,
+    text,
 )
 
 if TYPE_CHECKING:  # imported for annotations only
@@ -71,6 +73,10 @@ OPEN_STATUSES = frozenset({STATUS_RUNNING, STATUS_INCOMPLETE, STATUS_NO_3MF})
 # relabel it as a normal finish.
 UNBOOKABLE_STATUSES = frozenset({STATUS_INCOMPLETE, STATUS_NO_3MF})
 
+# A print in one of these was stopped part way, so it costs the share of the
+# estimate it got through rather than all of it.
+STOPPED_STATUSES = frozenset({STATUS_FAILED, STATUS_CANCELLED})
+
 
 settings_table = Table(
     f"{TABLE_PREFIX}settings",
@@ -78,7 +84,7 @@ settings_table = Table(
     Column("printer_id", Integer, primary_key=True),
     Column("tracking_enabled", Boolean, nullable=False, default=True),
     Column("auto_spend", Boolean, nullable=False, default=True),
-    Column("spend_on_cancel", Boolean, nullable=False, default=False),
+    Column("spend_on_cancel", Boolean, nullable=False, default=True),
     Column("clear_assignment_when_empty", Boolean, nullable=False, default=False),
     Column("history_retention_days", Integer, nullable=False, default=365),
     Column("updated_at", DateTime(timezone=True), server_default=func.now()),
@@ -97,6 +103,10 @@ prints_table = Table(
     Column("started_at", DateTime(timezone=True), nullable=False, index=True),
     Column("finished_at", DateTime(timezone=True), nullable=True),
     Column("status", String(20), nullable=False),
+    # How much of the print ran, 0.0 to 1.0, for a print that did not finish.
+    # None means it could not be determined, and then nothing is booked rather
+    # than a number being invented.
+    Column("completed_fraction", Float, nullable=True),
     Column("spent", Boolean, nullable=False, default=False),
     Column("thumbnail", LargeBinary, nullable=True),
     Column("thumbnail_mime", String(50), nullable=True),
@@ -154,17 +164,56 @@ printer_status_table = Table(
 
 
 async def ensure_tables(engine: AsyncEngine) -> None:
-    """Create the plugin tables if they do not exist yet.
+    """Bring the plugin tables up to date with what this version declares.
 
     Idempotent and safe to call from every uvicorn worker: ``checkfirst`` turns
-    this into a no-op for every table that is already there, so no worker has to
-    know whether it is the first one.
+    the creation into a no-op for every table that is already there, so no worker
+    has to know whether it is the first one.
+
+    Creation alone is not enough. ``create_all`` only ever creates whole tables,
+    so a column added in a later version of this plugin would simply be missing
+    on an instance that already ran an earlier one, and every query naming it
+    would fail. Alembic never sees these tables, so this is the only place an
+    additive change can happen.
 
     The engine is passed in rather than imported, which keeps this module free of
     any knowledge about where FilaMan keeps it.
     """
     async with engine.begin() as connection:
         await connection.run_sync(metadata.create_all, checkfirst=True)
+        await connection.run_sync(_add_missing_columns)
+
+
+def _add_missing_columns(connection: Any) -> None:
+    """Add columns an existing table has not got yet.
+
+    Only nullable columns can be added this way, which is exactly what the
+    additive-only rule in CLAUDE.md allows: a NOT NULL column would need a value
+    for every row that already exists, and inventing one is how history gets
+    corrupted. Such a column is refused loudly rather than added wrongly.
+    """
+    inspector = inspect(connection)
+    quote = connection.dialect.identifier_preparer.quote
+
+    for table in metadata.sorted_tables:
+        if not inspector.has_table(table.name):
+            continue
+
+        present = {column["name"] for column in inspector.get_columns(table.name)}
+        for column in table.columns:
+            if column.name in present:
+                continue
+
+            if not column.nullable and column.server_default is None:
+                raise RuntimeError(
+                    f"cannot add {table.name}.{column.name} to an existing table: "
+                    "a new column has to be nullable, see CLAUDE.md section 6"
+                )
+
+            definition = column.type.compile(connection.dialect)
+            connection.execute(
+                text(f"ALTER TABLE {quote(table.name)} ADD COLUMN {quote(column.name)} {definition}")
+            )
 
 
 async def purge_expired_history(

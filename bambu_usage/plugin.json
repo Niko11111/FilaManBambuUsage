@@ -2,7 +2,7 @@
   "plugin_key": "bambu_usage",
   "name": "Bambu Usage Tracking",
   "plugin_type": "integration",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Tracks print jobs on Bambu Lab printers and deducts the consumed filament from the matching FilaMan spools. Reads the AMS slot assignment maintained by the Bambu Lab driver plugin, so nothing has to be configured twice. Provides a print history with plate previews and manual correction.",
   "author": "Niko11111",
   "homepage": "https://github.com/Niko11111/FilaManBambuUsage",
