@@ -71,14 +71,30 @@
 
     /* FilaMan serves this page outside its own shell, so the navigation drawer
        is not there. Until FilaMan can embed a plugin page, this is the way
-       back. See docs/01_Design.md section 8.1. */
+       back, and it looks like a button because a muted line of text is not
+       something anybody finds. See docs/01_Design.md section 8.1. */
     .back-link {
-      display: inline-block;
-      margin-bottom: 18px;
-      color: var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 22px;
+      padding: 7px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      color: var(--text);
       font-size: 0.85rem;
+      font-weight: 600;
+      transition: color var(--transition), border-color var(--transition);
     }
-    .back-link:hover { color: var(--accent); }
+    /* The arrow is a pseudo element on purpose: data-i18n replaces the text
+       content of the link, and a child element would be wiped with it. */
+    .back-link::before { content: "\2190"; font-size: 1rem; line-height: 1; }
+    .back-link:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+      text-decoration: none;
+    }
 
     .hero { margin-bottom: 28px; }
     .hero h1 {
