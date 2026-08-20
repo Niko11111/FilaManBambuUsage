@@ -1,6 +1,6 @@
 {
   "page": {
-    "title": "Bambu Verbrauchserfassung",
+    "title": "Bambu Usage Tracking",
     "subtitle": "Bucht das bei Bambu-Lab-Drucken verbrauchte Filament von den passenden FilaMan-Spulen ab und führt eine Druckhistorie mit Plate-Vorschau.",
     "back": "Zurück zu FilaMan",
     "footer": "FilaManBambuUsage, MIT. Verbrauchslogik portiert von OpenSpoolMan (MIT)."
@@ -14,7 +14,7 @@
     "none": "Kein Bambu-Lab-Drucker gefunden. Lege in FilaMan einen mit dem Bambu-Lab-Treiber an.",
     "connected": "verbunden",
     "disconnected": "keine Verbindung",
-    "trackingOff": "Erfassung aus",
+    "trackingOff": "Tracking aus",
     "printing": "druckt {file}",
     "idle": "kein Druck aktiv",
     "lastError": "Letzter Fehler",
@@ -23,7 +23,7 @@
   "history": {
     "heading": "Drucke",
     "running": "Läuft gerade",
-    "layer": "Schicht {layer} von {total}",
+    "layer": "Layer {layer} von {total}",
     "remaining": "noch {minutes} min, fertig um {end}",
     "openPrinter": "Drucker in FilaMan öffnen",
     "none": "Noch kein Druck erfasst. Der nächste auf einem überwachten Drucker landet hier.",
@@ -31,7 +31,7 @@
     "loadMore": "Mehr anzeigen",
     "filament": "Filament",
     "slot": "Slot",
-    "external": "externe Spule",
+    "external": "External Tray",
     "span": "{from}% bis {to}% dieses Filaments",
     "estimated": "Geschätzt",
     "booked": "Gebucht",
@@ -72,7 +72,7 @@
     "heading": "Einstellungen",
     "scope": "Gilt für",
     "global": "Alle Drucker",
-    "tracking": "Diesen Drucker erfassen",
+    "tracking": "Diesen Drucker tracken",
     "autoSpend": "Nach jedem fertigen Druck automatisch abbuchen",
     "spendOnCancel": "Abgebrochenen Druck anteilig abbuchen",
     "retention": "Historie aufbewahren, Tage",
