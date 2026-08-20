@@ -434,6 +434,93 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(booked, {7: 41.2, 8: 12.5})
 
+    async def test_a_spool_swapped_mid_print_is_charged_its_share(self):
+        # The case OpenSpoolMan cannot express: one spool runs empty at 40 per
+        # cent and is replaced. Charging either one for the whole print is wrong
+        # in one direction or the other.
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8, 9)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            first = (await store.list_filaments(db, print_id))[0]
+
+            self.assertTrue(await service.split_filament_row(db, first.id, 0.4, 9))
+
+            rows = await store.list_filaments(db, print_id)
+            self.assertEqual(len(rows), 3)
+
+            await service.finish_print(db, print_id, models.STATUS_FINISHED, AUTO, NOW)
+
+        # 41.2 g split at 40 per cent, and the second filament untouched.
+        self.assertEqual(
+            sorted(self.consumptions),
+            [(7, 16.48, "cube.3mf"), (8, 12.5, "cube.3mf"), (9, 24.72, "cube.3mf")],
+        )
+        # What the two halves cost together is still the slicer estimate.
+        self.assertAlmostEqual(16.48 + 24.72, 41.2, places=2)
+
+    async def test_both_halves_keep_the_slot_and_the_material(self):
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8, 9)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            first = (await store.list_filaments(db, print_id))[0]
+            await service.split_filament_row(db, first.id, 0.4, 9)
+
+            halves = [
+                row for row in await store.list_filaments(db, print_id) if row.filament_id == 1
+            ]
+
+        self.assertEqual([row.spool_id for row in halves], [7, 9])
+        self.assertEqual([row.slot_index for row in halves], ["0-0", "0-0"])
+        self.assertEqual([row.material for row in halves], ["PLA", "PLA"])
+        self.assertEqual([row.from_fraction for row in halves], [None, 0.4])
+        self.assertEqual([row.to_fraction for row in halves], [0.4, None])
+        self.assertAlmostEqual(halves[0].estimated_grams, 16.48, places=2)
+        self.assertAlmostEqual(halves[1].estimated_grams, 24.72, places=2)
+
+    async def test_a_row_can_be_split_more_than_once(self):
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8, 9, 10)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            first = (await store.list_filaments(db, print_id))[0]
+            await service.split_filament_row(db, first.id, 0.4, 9)
+
+            # The second spool runs out too, at 70 per cent of the print.
+            second = [
+                row
+                for row in await store.list_filaments(db, print_id)
+                if row.filament_id == 1 and row.spool_id == 9
+            ][0]
+            await service.split_filament_row(db, second.id, 0.7, 10)
+
+            thirds = [
+                row for row in await store.list_filaments(db, print_id) if row.filament_id == 1
+            ]
+
+        self.assertEqual([row.spool_id for row in thirds], [7, 9, 10])
+        # 40, 30 and 30 per cent of 41.2 g.
+        self.assertAlmostEqual(thirds[0].estimated_grams, 16.48, places=2)
+        self.assertAlmostEqual(thirds[1].estimated_grams, 12.36, places=2)
+        self.assertAlmostEqual(thirds[2].estimated_grams, 12.36, places=2)
+
+    async def test_a_booked_row_is_not_split_any_more(self):
+        # The print is over as far as that row is concerned.
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8, 9)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            await service.finish_print(db, print_id, models.STATUS_FINISHED, AUTO, NOW)
+
+            booked = (await store.list_filaments(db, print_id))[0]
+            self.assertFalse(await service.split_filament_row(db, booked.id, 0.4, 9))
+            self.assertEqual(len(await store.list_filaments(db, print_id)), 2)
+
     async def test_booking_a_print_that_does_not_exist(self):
         async with self.sessions() as db:
             with self.assertRaises(service.UsageError):

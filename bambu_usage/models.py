@@ -143,9 +143,16 @@ filament_table = Table(
     Column("material", String(50), nullable=True),
     Column("color_hex", String(20), nullable=True),
     Column("tray_info_idx", String(50), nullable=True),
-    # The slicer estimate. Never overwritten, so a correction stays traceable.
+    # The slicer estimate. Never overwritten by a booking, so a correction stays
+    # traceable. It is divided when a row is split, see from_fraction below.
     Column("estimated_grams", Float, nullable=True),
     Column("estimated_length_m", Float, nullable=True),
+    # Which part of the print this row covers, 0.0 to 1.0. Both NULL means the
+    # whole of it, which is the normal case. They are filled when a spool is
+    # swapped mid print and the row is split in two, so each spool is charged
+    # the share it actually contributed. See docs/04_Data_Model.md section 4.
+    Column("from_fraction", Float, nullable=True),
+    Column("to_fraction", Float, nullable=True),
     # What was actually booked against the spool.
     Column("spent_grams", Float, nullable=True),
     Column("spent_at", DateTime(timezone=True), nullable=True),

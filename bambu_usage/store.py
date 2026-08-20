@@ -46,6 +46,8 @@ class FilamentRow:
     tray_info_idx: str | None = None
     estimated_grams: float | None = None
     estimated_length_m: float | None = None
+    from_fraction: float | None = None
+    to_fraction: float | None = None
 
 
 async def create_print(
@@ -254,12 +256,43 @@ async def set_filament_spool(
     db: AsyncSession,
     filament_row_id: int,
     spool_id: int | None,
+    manual: bool = True,
 ) -> None:
-    """Attach a spool to one row after the fact, and mark it as done by hand."""
+    """Attach a spool to one row after the fact.
+
+    *manual* marks it as done by hand, which is what the interface does. The
+    listener passes False when it merely picks up an assignment that reached
+    FilaMan a moment after the print had already started.
+    """
+    values: dict[str, Any] = {"spool_id": spool_id}
+    if manual:
+        values["manual_override"] = True
+
+    await db.execute(
+        update(filament_table).where(filament_table.c.id == filament_row_id).values(**values)
+    )
+
+
+async def narrow_filament_row(
+    db: AsyncSession,
+    filament_row_id: int,
+    estimated_grams: float | None,
+    estimated_length_m: float | None,
+    to_fraction: float,
+) -> None:
+    """Close a filament row off at *to_fraction* and shrink its estimate to match.
+
+    The other half of a split; the remainder is inserted as a row of its own.
+    See service.split_filament_row.
+    """
     await db.execute(
         update(filament_table)
         .where(filament_table.c.id == filament_row_id)
-        .values(spool_id=spool_id, manual_override=True)
+        .values(
+            estimated_grams=estimated_grams,
+            estimated_length_m=estimated_length_m,
+            to_fraction=to_fraction,
+        )
     )
 
 

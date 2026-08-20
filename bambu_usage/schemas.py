@@ -64,6 +64,10 @@ class FilamentUsage(BaseModel):
     spent_grams: float | None = None
     spent_at: datetime | None = None
     manual_override: bool = False
+    # Which part of the print this row covers, when a spool was swapped during
+    # it. Both None means the whole print, which is the normal case.
+    from_fraction: float | None = None
+    to_fraction: float | None = None
 
 
 class PrintRecord(BaseModel):

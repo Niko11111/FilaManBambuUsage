@@ -221,6 +221,9 @@
     table.filaments td { padding: 6px 10px 6px 0; vertical-align: middle; }
     table.filaments tr.needs-spool { background: rgba(247,200,106,0.08); }
 
+    /* Only there when a spool was swapped mid print and the row was split. */
+    .span-note { color: var(--text-muted); font-size: 0.78rem; }
+
     .swatch {
       display: inline-block;
       width: 12px; height: 12px;
@@ -731,8 +734,16 @@
         first.appendChild(document.createTextNode(usage.material || ''));
         row.appendChild(first);
 
-        row.appendChild(el('td', null,
+        var slot = el('td');
+        slot.appendChild(document.createTextNode(
           usage.slot_index === EXTERNAL_SLOT_INDEX ? t('history.external') : (usage.slot_index || '-')));
+        if (isSplit(usage)) {
+          slot.appendChild(el('div', 'span-note', t('history.span', {
+            from: Math.round(share(usage.from_fraction, 0) * 100),
+            to: Math.round(share(usage.to_fraction, 1) * 100)
+          })));
+        }
+        row.appendChild(slot);
         row.appendChild(el('td', null, spoolName(usage.spool_id)));
         row.appendChild(el('td', null, grams(usage.estimated_grams)));
 
@@ -742,6 +753,16 @@
 
         row.appendChild(assigned ? correctionCell(usage) : assignmentCell(usage));
         return row;
+      }
+
+      function isSplit(usage) {
+        // Both ends empty means the row covers the whole print, which is the
+        // normal case and worth no words.
+        return share(usage.from_fraction, null) !== null || share(usage.to_fraction, null) !== null;
+      }
+
+      function share(value, fallback) {
+        return value === null || value === undefined ? fallback : value;
       }
 
       function assignmentCell(usage) {

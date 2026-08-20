@@ -156,6 +156,30 @@ def should_spend(*, finished_normally: bool, auto_spend: bool, spend_on_cancel: 
     return spend_on_cancel
 
 
+def split_share(
+    from_fraction: float | None,
+    to_fraction: float | None,
+    at: float,
+) -> float | None:
+    """What share of a filament row belongs to the part before *at*.
+
+    A row covers a span of the print, by default the whole of it, and both ends
+    being None means exactly that. Splitting a span (a, b) at *at* leaves the
+    first part with ``(at - a) / (b - a)``.
+
+    Returns None when *at* does not fall strictly inside the span. Splitting at
+    an edge would produce an empty row, and a span that does not contain the
+    moment belongs to a part of the print that is already over.
+    """
+    start = 0.0 if from_fraction is None else float(from_fraction)
+    end = 1.0 if to_fraction is None else float(to_fraction)
+
+    if not start < at < end:
+        return None
+
+    return (at - start) / (end - start)
+
+
 def booking_factor(*, was_stopped: bool, completed_fraction: float | None) -> float:
     """What share of the estimate a print costs.
 
@@ -383,6 +407,73 @@ async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
     return booked
 
 
+async def split_filament_row(
+    db: AsyncSession,
+    filament_row_id: int,
+    at_fraction: float,
+    new_spool_id: int,
+) -> bool:
+    """Divide one filament row where the spool it draws from changed.
+
+    A spool that runs empty gets replaced, and from that moment the print draws
+    from a different one. Charging either spool for the whole print would be
+    wrong in one direction or the other, so the row becomes two rows: the old
+    spool keeps the share up to *at_fraction*, the new one gets the rest.
+
+    Two rows rather than a table of segments, because everything downstream
+    already works per row: the booking, the summing per spool, the correction by
+    hand and the display. A print that used two spools for one slicer filament
+    genuinely is two entries.
+
+    Returns whether anything was split. A row that was already booked, or whose
+    span does not contain the moment, is left alone.
+    """
+    from . import store
+
+    row = await store.get_filament(db, filament_row_id)
+    if row is None:
+        raise UsageError(f"filament row {filament_row_id} does not exist")
+
+    if row.spent_at is not None:
+        return False
+
+    share = split_share(row.from_fraction, row.to_fraction, at_fraction)
+    if share is None:
+        return False
+
+    kept_grams = _scaled(row.estimated_grams, share)
+    kept_length = _scaled(row.estimated_length_m, share)
+
+    await store.narrow_filament_row(
+        db,
+        filament_row_id,
+        estimated_grams=kept_grams,
+        estimated_length_m=kept_length,
+        to_fraction=at_fraction,
+    )
+    await store.add_filament_rows(
+        db,
+        int(row.print_id),
+        [
+            store.FilamentRow(
+                filament_id=int(row.filament_id),
+                slot_index=row.slot_index,
+                spool_id=new_spool_id,
+                material=row.material,
+                color_hex=row.color_hex,
+                tray_info_idx=row.tray_info_idx,
+                estimated_grams=_remainder(row.estimated_grams, kept_grams),
+                estimated_length_m=_remainder(row.estimated_length_m, kept_length),
+                from_fraction=at_fraction,
+                to_fraction=row.to_fraction,
+            )
+        ],
+    )
+    await db.commit()
+
+    return True
+
+
 async def assign_spool(
     db: AsyncSession,
     filament_row_id: int,
@@ -481,6 +572,8 @@ async def get_history(db: AsyncSession, limit: int = 50, offset: int = 0) -> lis
                 spent_grams=row.spent_grams,
                 spent_at=row.spent_at,
                 manual_override=bool(row.manual_override),
+                from_fraction=row.from_fraction,
+                to_fraction=row.to_fraction,
             )
             for row in by_print.get(int(entry.id), [])
         ]
@@ -544,6 +637,18 @@ async def get_thumbnail(db: AsyncSession, print_id: int) -> tuple[bytes, str] | 
 # Note written to the spool log when an amount was corrected by hand. The file
 # name of the print is the note on a normal booking, see spend_print.
 _CORRECTION_NOTE = "correction"
+
+
+def _scaled(value: float | None, share: float) -> float | None:
+    """Multiply an estimate by a share, leaving an unknown estimate unknown."""
+    return None if value is None else value * share
+
+
+def _remainder(total: float | None, kept: float | None) -> float | None:
+    """What is left of an estimate after the kept part was taken out."""
+    if total is None or kept is None:
+        return None
+    return total - kept
 
 
 def _share_of(row: Any, factor: float) -> float | None:

@@ -27,6 +27,7 @@
     "filament": "Filament",
     "slot": "Slot",
     "external": "externe Spule",
+    "span": "{from}% bis {to}% des Drucks",
     "estimated": "Geschätzt",
     "booked": "Gebucht",
     "spool": "Spule",

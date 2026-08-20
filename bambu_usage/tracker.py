@@ -58,6 +58,11 @@ logger = logging.getLogger(__name__)
 # than failing the insert.
 MAX_ERROR_LENGTH = 500
 
+# How often the slot assignment of a running print is compared against what was
+# recorded at its start. A spool that runs empty is swapped in minutes, not in
+# seconds, and this costs one small query per slot.
+ASSIGNMENT_CHECK_INTERVAL_SECONDS = 30
+
 # gcode_state values that matter. PREPARE -> RUNNING marks a local print start.
 STATE_IDLE = "IDLE"
 STATE_PREPARE = "PREPARE"
@@ -273,6 +278,7 @@ class PrinterListener:
     current_file_name: str | None = None
     state: dict = field(default_factory=dict)
     client: Any = None
+    last_assignment_check: datetime | None = None
 
     def describes(self, printer: BambuPrinter) -> bool:
         """Whether this listener still matches how FilaMan knows the printer.
@@ -370,6 +376,11 @@ class PrinterListener:
         self.state = merged
 
         if transition is None:
+            try:
+                await self._watch_assignments(moment)
+            except Exception as exc:
+                logger.exception("printer %s: watching the assignment failed", self.printer_id)
+                self.last_error = str(exc)[:MAX_ERROR_LENGTH]
             return
 
         try:
@@ -422,6 +433,7 @@ class PrinterListener:
 
         self.current_print_id = print_id
         self.current_file_name = job.file_name
+        self.last_assignment_check = None
         logger.info(
             "printer %s: print %s started, %s, %d filaments",
             self.printer_id,
@@ -498,6 +510,87 @@ class PrinterListener:
         self.current_print_id = None
         self.current_file_name = None
         await self.publish_status()
+
+    async def _watch_assignments(self, at: datetime) -> None:
+        """Notice a spool being swapped while the print is running.
+
+        A spool that runs empty gets replaced, and from that moment the print
+        draws from a different one. Charging the whole print to either of them is
+        wrong, so the filament row is split where the change happened and each
+        spool is charged its share.
+
+        Three rules, and each of them is there because of a case that would
+        otherwise be got wrong:
+
+        * A slot that currently resolves to nothing is ignored. During a swap the
+          tray is briefly empty, and splitting on that would invent a stretch of
+          print with no spool at all.
+        * A row that had no spool to begin with adopts the one that turned up.
+          The assignment usually reaches FilaMan a moment after the print
+          started, and that is a late arrival, not a change.
+        * A row that was already closed off by an earlier split is left alone.
+          It belongs to a part of the print that is over.
+
+        Without a usable progress figure nothing is split. The result would land
+        on two spools, and a guess is expensive twice over.
+        """
+        if self.current_print_id is None:
+            return
+
+        if self.last_assignment_check is not None:
+            since = (at - self.last_assignment_check).total_seconds()
+            if since < ASSIGNMENT_CHECK_INTERVAL_SECONDS:
+                return
+        self.last_assignment_check = at
+
+        from . import filaman, service, store
+
+        fraction = completed_fraction(self.state)
+
+        async with self.sessions() as db:
+            for row in await store.list_filaments(db, self.current_print_id):
+                if row.slot_index is None or row.spent_at is not None:
+                    continue
+                if row.to_fraction is not None:
+                    continue
+
+                current = await filaman.resolve_spool_for_slot(
+                    db, self.printer_id, row.slot_index
+                )
+                if current is None or current == row.spool_id:
+                    continue
+
+                if row.spool_id is None:
+                    await store.set_filament_spool(db, int(row.id), current, manual=False)
+                    await db.commit()
+                    logger.info(
+                        "printer %s: slot %s resolved to spool %s after the print had started",
+                        self.printer_id,
+                        row.slot_index,
+                        current,
+                    )
+                    continue
+
+                if fraction is None:
+                    logger.warning(
+                        "printer %s: slot %s changed from spool %s to %s, but the progress "
+                        "is unknown, so nothing was split",
+                        self.printer_id,
+                        row.slot_index,
+                        row.spool_id,
+                        current,
+                    )
+                    continue
+
+                if await service.split_filament_row(db, int(row.id), fraction, current):
+                    logger.info(
+                        "printer %s: slot %s changed from spool %s to %s at %.0f%% of the print",
+                        self.printer_id,
+                        row.slot_index,
+                        row.spool_id,
+                        current,
+                        fraction * 100,
+                    )
 
     async def publish_status(self) -> None:
         """Write what this listener knows into the table the page reads."""

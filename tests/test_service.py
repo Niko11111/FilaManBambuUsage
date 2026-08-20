@@ -16,6 +16,7 @@ from bambu_usage.service import (
     TRAYS_PER_AMS,
     resolve_slot_indexes,
     should_spend,
+    split_share,
     sum_grams_per_spool,
     tray_to_slot_index,
 )
@@ -161,6 +162,34 @@ class BookingFactorTest(unittest.TestCase):
         # more than the print could possibly have used.
         self.assertEqual(booking_factor(was_stopped=True, completed_fraction=1.4), 1.0)
         self.assertEqual(booking_factor(was_stopped=True, completed_fraction=-0.2), 0.0)
+
+
+class SplitShareTest(unittest.TestCase):
+    """Dividing a filament row where the spool it draws from changed."""
+
+    def test_a_whole_row_split_in_the_middle(self):
+        # Both ends empty is the normal case: the row covers the whole print.
+        self.assertEqual(split_share(None, None, 0.4), 0.4)
+
+    def test_a_row_that_was_already_split_once(self):
+        # The second half of a print, split again halfway through it. Compared
+        # loosely because (0.7 - 0.4) / (1 - 0.4) is not exactly a half in binary,
+        # and rounding a share to make a test happy would be the wrong fix.
+        self.assertAlmostEqual(split_share(0.4, None, 0.7), 0.5)
+
+    def test_a_row_that_ends_early(self):
+        self.assertEqual(split_share(0.0, 0.4, 0.2), 0.5)
+
+    def test_splitting_at_an_edge_would_leave_an_empty_row(self):
+        for at in (0.0, 1.0):
+            with self.subTest(at=at):
+                self.assertIsNone(split_share(None, None, at))
+        self.assertIsNone(split_share(0.4, None, 0.4))
+
+    def test_a_moment_outside_the_span_belongs_to_another_row(self):
+        # That part of the print is over, and its row was closed off already.
+        self.assertIsNone(split_share(0.4, None, 0.2))
+        self.assertIsNone(split_share(0.0, 0.4, 0.6))
 
 
 if __name__ == "__main__":

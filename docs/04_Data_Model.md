@@ -169,8 +169,10 @@ One row per slicer filament of one print. This is where the actual work happens.
 | `material` | str, nullable | from the 3MF |
 | `color_hex` | str, nullable | from the 3MF |
 | `tray_info_idx` | str, nullable | Bambu material identifier, for plausibility checks |
-| `estimated_grams` | float, nullable | the slicer estimate, never modified |
-| `estimated_length_m` | float, nullable | |
+| `estimated_grams` | float, nullable | the slicer estimate. Never modified by a booking, but divided when a row is split |
+| `estimated_length_m` | float, nullable | divided in the same proportion |
+| `from_fraction` | float, nullable | from which share of the print this row applies |
+| `to_fraction` | float, nullable | up to which. Both `NULL` means the whole print |
 | `spent_grams` | float, nullable | what was actually booked |
 | `spent_at` | datetime, nullable | |
 | `manual_override` | bool | assignment or amount corrected by hand |
@@ -181,6 +183,13 @@ a correction stay traceable and comparable against the scale.
 
 `spool_id` being `NULL` is the normal outcome for a local print in stage 1, and
 what triggers the highlight in the history.
+
+**One slicer filament can occupy more than one row.** When the spool in a tray is
+swapped while the print runs, the row is split at the progress reached: the first
+keeps `from_fraction` empty and gets `to_fraction`, the second starts there and
+runs to the end. Their estimates are the original one divided in that proportion,
+so the sum over the rows of a `filament_id` is still what the slicer predicted.
+The reasoning is in `01_Design.md` section 7.1.
 
 ### bambu_usage_printer_status
 

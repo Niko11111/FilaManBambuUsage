@@ -241,9 +241,26 @@ Each of these needs defined behaviour. Quietly doing nothing is not behaviour.
 | Printer offline or MQTT drops | The listener reports its state on the page and reconnects with backoff. Other printers keep running. |
 | Plugin starts mid print | The beginning was missed and the mapping is unknown. The print is recorded as "incomplete" from the next state onwards and is not deducted. |
 | Two slicer filaments on the same spool | Sum the consumption and deduct **once**, not twice. |
-| Spool swapped between start and end of the print | The assignment **at the end** is binding, because that is when the deduction happens. The history makes it visible when the assignment at start and end disagree. |
+| Spool swapped while the print runs | The filament row is **split** where the change happened: the old spool keeps the share up to that point, the new one gets the rest. Nothing is split when the progress is unknown, and a slot that momentarily resolves to nothing is ignored, because a tray is briefly empty during a swap. See below. |
+| The AMS switches to a **different tray** by itself when a spool runs empty | **Not detected.** The spool in the original tray does not change, so the comparison sees nothing. It would need `ams.tray_now`, a field `03_Bambu_Data_Sources.md` does not establish yet. Known limit, to be picked up once it is proven on a real printer. |
 | Remaining weight would go negative | `record_consumption()` clamps at 0 itself. The plugin relies on that and does not do its own arithmetic. |
 | Duplicate MQTT message | A print is identified by `subtask_id`, or by file name plus start time. Rows already deducted carry a flag and are never deducted twice. |
+
+### 7.1 Why a swapped spool splits the row
+
+A spool that runs empty is replaced, and from that moment the print draws from a
+different one. Charging either spool for the whole print is wrong in one
+direction or the other, and OpenSpoolMan cannot express the case at all.
+
+The share comes from the same progress figure an aborted print is booked at, so
+there is one notion of "how far did it get" and not two.
+
+**The split produces two rows, not a table of segments.** Everything downstream
+already works per row: the booking, the summing per spool, the correction by hand
+and the display. A slicer filament that came off two spools genuinely is two
+entries, and the two new columns `from_fraction` and `to_fraction` say which part
+of the print each of them covers. Both empty means the whole print, which is the
+normal case and shows nothing extra on the page.
 
 ## 8. User interface
 
