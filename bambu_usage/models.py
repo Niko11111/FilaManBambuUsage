@@ -17,7 +17,8 @@ Enforced by tools/check_architecture.py.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
@@ -31,8 +32,13 @@ from sqlalchemy import (
     String,
     Table,
     UniqueConstraint,
+    delete,
     func,
+    select,
 )
+
+if TYPE_CHECKING:  # imported for annotations only
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 # Private metadata: keeps these tables out of FilaMan's Alembic migrations.
 metadata = MetaData()
@@ -118,18 +124,46 @@ filament_table = Table(
 )
 
 
-async def ensure_tables() -> None:
+async def ensure_tables(engine: AsyncEngine) -> None:
     """Create the plugin tables if they do not exist yet.
 
-    Idempotent and safe to call from every worker.
+    Idempotent and safe to call from every uvicorn worker: ``checkfirst`` turns
+    this into a no-op for every table that is already there, so no worker has to
+    know whether it is the first one.
+
+    The engine is passed in rather than imported, which keeps this module free of
+    any knowledge about where FilaMan keeps it.
     """
-    raise NotImplementedError
+    async with engine.begin() as connection:
+        await connection.run_sync(metadata.create_all, checkfirst=True)
 
 
-async def purge_expired_history(retention_days: int, now: datetime | None = None) -> int:
+async def purge_expired_history(
+    db: AsyncSession,
+    retention_days: int,
+    now: datetime | None = None,
+) -> int:
     """Delete prints older than *retention_days* and return how many went.
 
     A retention of 0 means keep everything. Thumbnails are stored inline, so
     this is what bounds the growth of the database.
+
+    The filament rows are deleted explicitly instead of through the declared
+    cascade. The cascade only fires where the database enforces foreign keys,
+    and orphaned filament rows would be invisible in the interface, which is the
+    worst kind of leak.
+
+    Committing is left to the caller, so a purge can share the transaction of
+    whatever triggered it.
     """
-    raise NotImplementedError
+    if retention_days <= 0:
+        return 0
+
+    moment = now or datetime.now(timezone.utc)
+    cutoff = moment - timedelta(days=retention_days)
+
+    expired = select(prints_table.c.id).where(prints_table.c.started_at < cutoff)
+    await db.execute(delete(filament_table).where(filament_table.c.print_id.in_(expired)))
+    result = await db.execute(delete(prints_table).where(prints_table.c.started_at < cutoff))
+
+    return result.rowcount or 0

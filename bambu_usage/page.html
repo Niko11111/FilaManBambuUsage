@@ -69,6 +69,17 @@
 
     .page-content { max-width: 900px; margin: 0 auto; padding: 32px 24px; }
 
+    /* FilaMan serves this page outside its own shell, so the navigation drawer
+       is not there. Until FilaMan can embed a plugin page, this is the way
+       back. See docs/01_Design.md section 8.1. */
+    .back-link {
+      display: inline-block;
+      margin-bottom: 18px;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+    .back-link:hover { color: var(--accent); }
+
     .hero { margin-bottom: 28px; }
     .hero h1 {
       font-family: var(--font-serif);
@@ -152,6 +163,8 @@
 </head>
 <body>
   <div class="page-content">
+
+    <a class="back-link" href="/" data-i18n="page.back"></a>
 
     <div class="hero">
       <h1 data-i18n="page.title"></h1>

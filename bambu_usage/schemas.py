@@ -20,7 +20,7 @@ class PluginSettings(BaseModel):
     ``printer_id`` 0 addresses the global row. See docs/04_Data_Model.md.
     """
 
-    printer_id: int = 0
+    printer_id: int = Field(default=0, ge=0)
     tracking_enabled: bool = True
     auto_spend: bool = True
     spend_on_cancel: bool = False
@@ -102,3 +102,6 @@ class HealthResponse(BaseModel):
     version: str
     tracking_active: bool = False
     printers_watched: int = 0
+    # Whether the worker answering this request has run its one-time setup. The
+    # plugin has no startup hook, so this is the only outside view of it.
+    tables_ready: bool = False

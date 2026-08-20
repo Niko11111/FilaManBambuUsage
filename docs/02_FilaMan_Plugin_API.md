@@ -93,6 +93,15 @@ Because the page is served by FilaMan and not by the plugin, **the plugin
 cannot template it**. Anything dynamic, translations included, has to be
 fetched by the page at runtime from the plugin's own router.
 
+**A plugin page is not embedded into FilaMan's interface.** `Layout.astro`
+renders the navigation entry as `a.href = p.page_url`, a plain link, and
+`serve_plugin_page()` answers with `FileResponse(page.html)`. The browser
+therefore leaves the Astro shell, and the navigation drawer is gone for as long
+as a plugin page is open. Rebuilding that drawer inside `page.html` would mean
+carrying a copy of somebody else's interface and re-copying it after every
+FilaMan release, so this plugin carries a link back instead and takes the
+question upstream. See `01_Design.md` section 10.
+
 The pattern from `spoolmanapi/router.py`, two routers side by side:
 
 ```python
@@ -103,7 +112,33 @@ router = APIRouter(prefix="/api/v1", dependencies=[Depends(require_ip_access)])
 admin_router = APIRouter(prefix="/admin/system/spoolman-api", tags=["admin-system"])
 ```
 
-Authentication comes from `app.api.deps`: `DBSession` and `RequirePermission`.
+Authentication comes from `app.api.deps`:
+
+| Name | Shape | Use |
+|---|---|---|
+| `DBSession` | `Annotated[AsyncSession, Depends(get_db)]` | one session per request |
+| `PrincipalDep` | `Annotated[Principal, Depends(require_auth)]` | any authenticated caller, which is what FilaMan's own read endpoints use |
+| `RequirePermission(key)` | returns `Depends(...)`, so it fits a parameter default as well as the `dependencies=[...]` list | write endpoints |
+
+Permission keys read `<entity>:<action>`, for example `printers:update`,
+`spools:update`, `spool_events:create_consumption`. They are resolved against the
+roles FilaMan seeds, so **a key a plugin invents belongs to no role** and would
+lock out everyone except a superadmin. A plugin borrows an existing key instead
+of making one up.
+
+**Where a write endpoint lives decides whether it is CSRF protected.**
+`CsrfMiddleware` in `app/core/middleware.py` checks `POST`, `PUT`, `PATCH` and
+`DELETE` **only for paths below `/api/v1/`**, plus `/auth/logout`, and only for
+session authenticated callers. A plugin that puts a write under its own
+`mount_prefix` therefore creates the one state changing endpoint on the instance
+that FilaMan's protection does not cover.
+
+The way out is the second router FilaMan already reads off the module.
+`_mount_plugin_routers()` picks up `admin_router` next to `router`, and
+`mount_deferred_plugin_routers()` includes it with `prefix="/api/v1"`. Writes
+placed there are guarded like every FilaMan write. Such a call has to carry the
+`X-CSRF-Token` header matching the `csrf_token` cookie, which is readable from
+JavaScript; `Layout.astro` does exactly that for logout.
 
 ## 4. Lifecycle, the trap
 
@@ -111,19 +146,53 @@ Authentication comes from `app.api.deps`: `DBSession` and `RequirePermission`.
 through `start_printer(printer)`. An integration plugin receives **no** `start`
 or `stop` call.
 
-For this plugin that means the MQTT listeners have to start themselves. The way
-to do it is an asyncio task launched when the router is imported and mounted,
-with:
+It gets no startup hook either. Three findings out of the source, and they
+compound:
+
+1. `_mount_plugin_routers()` at the bottom of `app/api/v1/router.py` imports
+   `<plugin_key>.router` and reads exactly two attributes off the module,
+   `router` and `admin_router`. Nothing else is ever looked at.
+2. `main.py` calls `mount_deferred_plugin_routers(app)` at **module import
+   time**, on the last lines of the file, not inside `lifespan`. No event loop
+   is running at that moment, so `asyncio.create_task()` is not available.
+3. `app = FastAPI(..., lifespan=lifespan)`. A custom lifespan replaces the
+   default one, and the default one is what would have run `on_startup`
+   handlers. Handlers a plugin router brings along are never called.
+
+**The consequence:** the first request into the plugin's own router is the
+earliest moment any code of this plugin can run. Whatever has to happen once,
+the tables included, hangs off that.
+
+For the MQTT listeners this leaves two routes. Stage 2 decides between them with
+what the first installation shows:
+
+- **start on first request.** Cheap and honest, but tracking only begins once
+  somebody opens the plugin page or touches one of its endpoints after a
+  restart.
+- **an own event loop in a daemon thread**, started at import time. Independent
+  of any request, at the price of a second SQLAlchemy engine, because a
+  connection pool cannot be shared across event loops.
+
+Either way the listeners need:
 
 - idempotence, so several uvicorn workers do not each start their own set.
-  FilaMan solves the same problem in `main.py` with a lock file under
-  `tempfile.gettempdir()`, and that pattern can be reused.
+  FilaMan solves the same problem in `main.py` with `fcntl.flock` on
+  `Path(tempfile.gettempdir()) / "filaman-startup.lock"`, held for the lifetime
+  of the primary worker, plus a watchdog through which a secondary worker takes
+  over when the lock becomes free. The pattern is reusable with a lock file of
+  our own.
 - an independent reconnect per printer
 - clean teardown when a printer disappears or the plugin is deactivated
 
 Deactivated plugins are recorded in `InstalledPlugin` with `is_active = False`.
 The manager skips printers whose `driver_key` belongs to a deactivated plugin.
 This plugin has to observe its own state in the same way.
+
+One more consequence of finding 1: `_mount_plugin_routers()` wraps the import in
+`try/except Exception` and only logs a warning. **An import error in `router.py`
+disables the plugin silently**, leaving one line in the FilaMan log and a 404 on
+every endpoint. That is the first place to look when the plugin appears
+installed but answers nothing.
 
 ## 5. BaseDriver, for orientation
 
@@ -175,10 +244,25 @@ The pattern from `spoolmanapi/settings.py`, adopted here:
 The tables survive a ZIP update because they live in the database and not in
 the plugin folder.
 
+**One part of that pattern is not adopted: the cache.** The image starts
+`gunicorn -w 4`, so four processes serve requests behind nginx, each with its
+own module state. Caching settings in one of them means three stale copies as
+soon as a write lands anywhere, and the staleness is silent. Measured on the
+test instance: 38 of 100 calls to `/bambu-usage/health` came back from a worker
+that had not run its own one-time setup yet. This plugin therefore reads its
+settings from the database every time.
+
 ## 8. Internals this plugin uses
 
 What this plugin imports from FilaMan. Every entry is a coupling that a FilaMan
 update can break, which is why it is listed here rather than left implicit.
+
+**`bambu_usage/filaman.py` is this table in executable form.** Every line except
+the last one lives in that module, and it imports them inside the function that
+needs them, so a missing or moved internal surfaces as one named error instead
+of an ImportError from somewhere deep in a callback. The last line is the
+exception: FastAPI resolves dependencies while the route decorators run, so
+`router.py` has to import them at module level.
 
 | Import | Purpose |
 |---|---|
@@ -198,6 +282,7 @@ update can break, which is why it is listed here rather than left implicit.
   not the interface. Everything here is derived from source.
 - The Fire-Devils plugin repositories carry **no LICENSE file**. Reading them as
   a reference is fine, taking code is not. See `NOTICE`.
-- Whether an integration plugin can reliably start a background task exactly
-  once across all uvicorn workers is plausible from the source but **not
-  demonstrated in practice**. That is the first thing stage 2 has to establish.
+- **How many uvicorn workers a FilaMan instance actually runs**, and therefore
+  how often a request driven bootstrap happens. That an integration plugin has
+  no startup hook at all is settled, see section 4; how many processes have to
+  cooperate is not.

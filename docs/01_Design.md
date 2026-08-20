@@ -55,10 +55,12 @@ That is precisely what must not happen, both are meant to run side by side.
 printer management.
 
 **The price:** an integration plugin gets **no `start` / `stop` lifecycle**.
-`plugin_manager.start_all()` starts drivers only, and only per printer. The
-MQTT listeners therefore have to start themselves as asyncio tasks when the
-router is mounted, and clean up after themselves. Details in
-`02_FilaMan_Plugin_API.md`.
+`plugin_manager.start_all()` starts drivers only, and only per printer. It gets
+no startup hook either: FilaMan mounts the router while the module is imported,
+before an event loop exists, and its own `lifespan` makes router `on_startup`
+handlers inert. The first request into the plugin's own router is therefore the
+earliest moment any of its code can run. Details and the consequence for the
+listeners in `02_FilaMan_Plugin_API.md` section 4.
 
 ## 4. Why an own MQTT connection
 
@@ -329,10 +331,20 @@ switched off, filament order from the plate gcode.
 **Stage 4, open.** Per layer tracking as the counterpart to
 `TRACK_LAYER_USAGE`, proportional deduction on abort.
 
-**Independently of all that:** ask Fire-Devils whether the plugin repositories
-can get a license, and whether the Bambu Lab driver could publish a
-`print_complete` event on the event bus. If that succeeds, stage 2 loses its own
-MQTT connection and `tracker.py` shrinks considerably.
+**Independently of all that**, three questions for Fire-Devils:
+
+1. Whether the plugin repositories can get a license. Without one, nothing can
+   be taken from them, see `NOTICE`.
+2. Whether the Bambu Lab driver could publish a `print_complete` event on the
+   event bus. If that succeeds, stage 2 loses its own MQTT connection and
+   `tracker.py` shrinks considerably.
+3. Whether a plugin page could be rendered inside FilaMan's own shell, so the
+   navigation drawer stays visible. Today the navigation links straight at
+   `page_url` and the backend returns `page.html` raw, which means a plugin page
+   takes over the whole window. The clean fix is a route in the frontend that
+   embeds the page in `Layout.astro`; the alternative, rebuilding the drawer
+   inside `page.html`, would duplicate somebody else's interface and rot with
+   every FilaMan release. Until then the page carries a link back.
 
 ## 11. Module layout
 
@@ -341,13 +353,29 @@ MQTT connection and `tracker.py` shrinks considerably.
 | `tracker.py` | listener per printer, state machine, reconciling the printer list | yes | no |
 | `threemf.py` | fetching and reading the 3MF, purely functional | no | no |
 | `service.py` | resolving slots, computing consumption, deducting | no | no |
-| `models.py` | the plugin's tables | no | no |
+| `filaman.py` | the only module that reads FilaMan's own models and services | no | no |
+| `models.py` | the plugin's tables and their lifecycle | no | no |
 | `settings.py` | loading and storing settings | no | no |
 | `schemas.py` | Pydantic models for the router | no | no |
 | `router.py` | endpoints, translations, thumbnails | no | yes |
 
 Separating `tracker.py` from `service.py` is deliberate, see section 4: it is
 the price of being able to move to the event bus later without a rebuild.
+
+`filaman.py` exists for the same kind of reason. Every coupling to FilaMan's
+internals, listed in `02_FilaMan_Plugin_API.md` section 8, lives in that one
+file, so a FilaMan update breaks one module instead of five. It imports `app`
+and SQLAlchemy inside the functions that need them, which keeps the pure parts
+of this plugin importable without a running FilaMan. `router.py` is the single
+exception to that rule, and a forced one: FastAPI resolves dependencies while
+the route decorators run, so the authentication dependencies have to be there at
+import time.
+
+**Sessions are passed, never opened deep inside.** Every function that touches
+the database takes an `AsyncSession` as its first argument. The router hands
+down the session from FilaMan's `DBSession` dependency, the listeners open one
+through `filaman.session_scope()`. That way one unit of work stays one
+transaction, and the caller decides when it is committed.
 
 These boundaries are not a matter of taste. `tools/check_architecture.py`
 parses the imports and fails the build when one of them is crossed.

@@ -17,6 +17,7 @@ again.
 | OpenSpoolMan | `drndos/openspoolman` | MIT, (c) 2024 Filip Bednarik | origin of the consumption logic |
 | Bambuddy | `bambuddy.cool` | AGPL-3.0 | alternative, not used |
 | bambulabs_api | `BambuTools/bambulabs_api` | MIT, (c) 2023 Chris Ioannidis | MQTT and FTPS |
+| BambuStudio | `bambulab/BambuStudio` | AGPL-3.0 | read to settle what `used_g` counts, nothing taken |
 
 Without a LICENSE file, copyright applies undiminished and the code is all
 rights reserved. **Reading is allowed, copying is not.** See `NOTICE`.
@@ -25,7 +26,9 @@ Open item: ask Fire-Devils whether the plugin repositories can get a license.
 
 ## 2. Evidence in FilaMan
 
-Paths relative to `backend/` in `Fire-Devils/filaman-system`.
+Paths relative to `backend/` in `Fire-Devils/filaman-system`. The rows on the
+lifecycle, the authentication dependencies and `record_consumption()` were
+re-read against the source on 2026-08-20, the rest on 2026-08-18.
 
 | Claim | Location |
 |---|---|
@@ -37,10 +40,21 @@ Paths relative to `backend/` in `Fire-Devils/filaman-system`.
 | Subdirectories inside the package survive installation | `app/services/plugin_service.py`, `_extract_zip()` inspects only the top ZIP level, install uses `shutil.copytree` |
 | Plugins live under `/app/data/plugins/<key>/` | `app/plugins/manager.py`, namespace comment at the top |
 | Drivers are imported as `app.plugins.<key>.driver` | `app/plugins/manager.py`, `load_driver()` |
-| Routers are mounted at startup | `app/main.py`, `mount_deferred_plugin_routers(app)` |
+| Plugin routers are mounted at **module import time**, not in the lifespan | `app/main.py`, `mount_deferred_plugin_routers(app)` on the last lines of the file |
+| An integration plugin exposes only `router` and `admin_router` | `app/api/v1/router.py`, `_mount_plugin_routers()` |
+| A custom lifespan makes router `on_startup` handlers inert | `app/main.py`, `FastAPI(..., lifespan=lifespan)` |
+| An import error in a plugin's `router.py` only logs a warning | `app/api/v1/router.py`, `_mount_plugin_routers()`, `except Exception` |
+| `DBSession`, `PrincipalDep`, `RequirePermission(key)` returning `Depends(...)` | `app/api/deps.py` |
+| CSRF is enforced for writes **only below `/api/v1/`** and for `/auth/logout` | `app/core/middleware.py`, `CsrfMiddleware.dispatch()` |
+| A plugin's `admin_router` is mounted with `prefix="/api/v1"` | `app/api/v1/router.py`, `mount_deferred_plugin_routers()` |
+| Four worker processes, so module state exists four times | `Dockerfile`, `CMD ["gunicorn", "-w", "4", ...]`; confirmed on the test instance, 38 of 100 health calls from a worker without its own setup |
+| `AuthMiddleware` runs for every path, not only for `/api/`, and fills `request.state.principal` from the `session_id` cookie | `app/core/middleware.py`, `AuthMiddleware.dispatch()` |
+| Permission keys read `<entity>:<action>` and are resolved against seeded roles | `app/api/v1/printers.py` and `spools.py`, `RequirePermission("printers:update")`; `app/api/deps.py`, `resolve_user_permissions()` |
+| SQLite runs with `PRAGMA foreign_keys=ON`, so declared cascades fire | `app/core/database.py`, `_set_sqlite_pragmas()` |
+| `record_consumption(spool, delta_weight_g, event_at, principal=None, source="ui", note=None)` | `app/services/spool_service.py` |
 | The page is resolved at request time | `app/main.py`, `@app.get("/plugin-page/{plugin_slug:path}")` |
 | Only drivers get a lifecycle | `app/main.py`, `plugin_manager.start_all()`; `app/plugins/manager.py`, `start_printer()` |
-| Several workers, startup guarded by a lock file | `app/main.py`, `_STARTUP_LOCK_PATH` |
+| Several workers, startup guarded by an exclusive `fcntl.flock`, with watchdog takeover | `app/main.py`, `_STARTUP_LOCK_PATH`, `lifespan()`, `_watchdog_try_takeover()` |
 | The `BaseDriver` interface | `app/plugins/base.py` |
 | The event bus carries thin notifications only | `app/core/event_bus.py`; `app/plugins/manager.py`, `event_bus.publish({"event": "slots_update", ...})` |
 | `Printer.driver_config` holds the credentials | `app/models/printer.py` |
@@ -143,8 +157,10 @@ serves exactly one printer and has no settings interface.
 These are plausible from the source but **not demonstrated in practice**. Stage
 2 has to settle them first.
 
-- Whether an integration plugin starts a background task exactly once across
-  several uvicorn workers.
+- How many uvicorn workers this instance runs, and therefore how often a
+  request driven bootstrap happens. That an integration plugin has **no** startup
+  hook at all is settled from the source as of 2026-08-20, see
+  `02_FilaMan_Plugin_API.md` section 4.
 - Whether `dependencies` in the manifest are installed for an integration plugin
   the same way as for a driver.
 - Whether a newly mounted router really needs a restart while the page appears

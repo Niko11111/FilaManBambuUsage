@@ -1,5 +1,6 @@
 {
   "page": {
+    "back": "Zurück zu FilaMan",
     "title": "Bambu Verbrauchserfassung",
     "subtitle": "Bucht das bei Bambu-Lab-Drucken verbrauchte Filament von den passenden FilaMan-Spulen ab und führt eine Druckhistorie mit Plate-Vorschau.",
     "footer": "FilaManBambuUsage, MIT. Verbrauchslogik portiert aus OpenSpoolMan (MIT)."
@@ -43,6 +44,7 @@
   },
   "errors": {
     "notImplemented": "Noch nicht implementiert",
+    "databaseUnavailable": "Die Datenbank des Plugins ist nicht erreichbar",
     "localesMissing": "Im installierten Plugin fehlen die Übersetzungsdateien"
   }
 }

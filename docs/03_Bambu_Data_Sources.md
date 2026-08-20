@@ -155,6 +155,33 @@ is the number that gets deducted.
 The 1-based `id` against the 0-based index is a classic off-by-one.
 OpenSpoolMan writes `ams_mapping[filamentId - 1]` for it.
 
+#### What used_g counts, and what it cannot
+
+**The purge is already in it.** Read out of BambuStudio (AGPL-3.0, nothing
+taken, as of 2026-08-20):
+
+- `PlateData::parse_filament_info()` in `src/libslic3r/Format/bbs_3mf.cpp`
+  derives `used_g` from `print_statistics.total_volumes_per_extruder`.
+- `GCodeProcessor::UsedFilaments::update_flush_per_filament()` in
+  `src/libslic3r/GCode/GCodeProcessor.cpp` adds the flushed volume into exactly
+  that total, not only into `flush_per_filament`.
+- The wipe tower lands in the same total through `increase_wipe_tower_caches()`.
+- `m_result.print_statistics.total_volumes_per_extruder =
+  m_used_filaments.total_volumes_per_filament` closes the chain.
+
+So the estimate covers the model, the support, the wipe tower and the material
+flushed on a filament change. The flush is even split between the outgoing and
+the incoming filament, by how much of the old one was still sitting in the
+nozzle. **This plugin therefore books the purge automatically and must never add
+anything on top of `used_g`.**
+
+What the estimate cannot cover is everything the printer extrudes outside the
+sliced job: loading or unloading a filament from the AMS menu, a calibration
+line, a purge after a change made by hand. None of that appears in the 3MF or in
+any MQTT field this plugin reads, so booking it would mean inventing a constant
+and guessing which spool to charge. Deliberately out of scope, see
+`01_Design.md` section 10.
+
 ### Metadata/plate_<N>.png
 
 The plate preview. `<N>` is the plate id from `slice_info.config`. This is

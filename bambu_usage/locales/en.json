@@ -1,5 +1,6 @@
 {
   "page": {
+    "back": "Back to FilaMan",
     "title": "Bambu Usage Tracking",
     "subtitle": "Deducts the filament used by Bambu Lab prints from the matching FilaMan spools and keeps a print history with plate previews.",
     "footer": "FilaManBambuUsage, MIT. Consumption logic ported from OpenSpoolMan (MIT)."
@@ -43,6 +44,7 @@
   },
   "errors": {
     "notImplemented": "Not implemented yet",
+    "databaseUnavailable": "The plugin database is not available",
     "localesMissing": "Translation files are missing from the installed plugin"
   }
 }

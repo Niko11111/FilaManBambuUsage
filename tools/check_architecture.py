@@ -38,7 +38,15 @@ PLUGIN_MODULES = {
     "schemas",
     "settings",
     "router",
+    "filaman",
 }
+
+# FilaMan's own package. Only filaman.py may reach into it, so that a FilaMan
+# update breaks one file of this plugin instead of five. router.py is the one
+# exception, and a forced one: FastAPI resolves dependencies while the route
+# decorators run, so the authentication dependencies cannot be fetched lazily.
+FILAMAN_PACKAGE = "app"
+FILAMAN_PACKAGE_REASON = "only filaman.py talks to FilaMan's internals"
 
 # What each module must not import, and why. The reason is printed on failure,
 # because a rule nobody understands gets deleted rather than followed.
@@ -48,28 +56,38 @@ FORBIDDEN_IMPORTS: dict[str, dict[str, str]] = {
         "router": "business logic must not depend on the HTTP layer",
         "bambulabs_api": "business logic must stay callable without a printer",
         "fastapi": "business logic must stay callable without a web framework",
+        FILAMAN_PACKAGE: FILAMAN_PACKAGE_REASON,
+    },
+    "filaman.py": {
+        **{m: "the seam to FilaMan must not depend on the plugin" for m in PLUGIN_MODULES},
+        "bambulabs_api": "reading FilaMan has nothing to do with reaching a printer",
+        "fastapi": "the seam to FilaMan must stay callable without a web framework",
     },
     "threemf.py": {
         **{m: "threemf stays pure, so it can be tested against a file on disk" for m in PLUGIN_MODULES},
         "fastapi": "threemf stays pure",
         "sqlalchemy": "threemf stays pure",
+        FILAMAN_PACKAGE: FILAMAN_PACKAGE_REASON,
     },
     "models.py": {
         "tracker": "the table definitions must not depend on the runtime",
         "router": "the table definitions must not depend on the HTTP layer",
         "service": "the table definitions must not depend on the business logic",
         "schemas": "database layout and wire format are deliberately separate",
+        FILAMAN_PACKAGE: FILAMAN_PACKAGE_REASON,
     },
     "schemas.py": {
         "tracker": "the wire format must not depend on the runtime",
         "router": "the wire format must not depend on the HTTP layer",
         "service": "the wire format must not depend on the business logic",
         "models": "database layout and wire format are deliberately separate",
+        FILAMAN_PACKAGE: FILAMAN_PACKAGE_REASON,
     },
     "settings.py": {
         "tracker": "settings must not depend on the runtime",
         "router": "settings must not depend on the HTTP layer",
         "service": "settings must not depend on the business logic",
+        FILAMAN_PACKAGE: FILAMAN_PACKAGE_REASON,
     },
     "router.py": {
         "bambulabs_api": "no printer access from inside an HTTP handler",
@@ -77,6 +95,7 @@ FORBIDDEN_IMPORTS: dict[str, dict[str, str]] = {
     },
     "tracker.py": {
         "router": "the runtime must not depend on the HTTP layer",
+        FILAMAN_PACKAGE: FILAMAN_PACKAGE_REASON,
     },
 }
 

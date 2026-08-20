@@ -4,9 +4,10 @@ A plugin for [FilaMan](https://github.com/Fire-Devils/filaman-system) that
 deducts the filament used by a Bambu Lab print from the matching FilaMan spool,
 automatically.
 
-> **Status: milestone 1, specification and scaffold.**
-> The plugin builds and installs, but tracks nothing yet. The Python modules are
-> stubs. The full design is in [`docs/01_Design.md`](docs/01_Design.md).
+> **Status: stage 2 in progress.**
+> The plugin builds, installs, creates its own tables and stores its settings,
+> but it does not track anything yet: no printer connection, no booking. The
+> full design is in [`docs/01_Design.md`](docs/01_Design.md).
 
 ## Why
 
@@ -44,7 +45,7 @@ reimplementation could. This plugin only reads that state.
 ## Building
 
 ```bash
-python3 tools/build_zip.py            # -> dist/bambu_usage-0.1.0.zip
+python3 tools/build_zip.py            # -> dist/bambu_usage-<version>.zip
 python3 tools/build_zip.py --check    # validate only
 python3 tools/build_zip.py --selftest # prove the validation bites
 ```
@@ -60,7 +61,7 @@ python3 -m unittest discover -s tests -t .   # unit tests, stdlib only
 ## Installing
 
 1. In FilaMan, go to **Admin, Plugins**
-2. Upload `dist/bambu_usage-0.1.0.zip`
+2. Upload `dist/bambu_usage-<version>.zip`
 3. **Bambu Usage** appears in the navigation
 
 No restart is needed for the page, FilaMan resolves plugin pages per request.

@@ -18,8 +18,12 @@ The resolution chain, in full:
 If the chain breaks anywhere the row is stored with spool_id NULL and offered
 for manual assignment. Never guess.
 
-May import: models, schemas, settings, threemf. Must not import tracker,
-router, bambulabs_api or fastapi, which is what keeps the business logic
+Everything this module reads out of FilaMan goes through filaman.py, never
+through FilaMan's own modules directly. That is what keeps the business logic
+here callable against fakes.
+
+May import: models, schemas, settings, threemf, filaman. Must not import tracker,
+router, app, bambulabs_api or fastapi, which is what keeps the business logic
 independent of where events come from. Enforced by
 tools/check_architecture.py.
 """
@@ -42,12 +46,6 @@ EXTERNAL_SLOT_INDEX = f"{EXTERNAL_SPOOL_AMS_ID}-{EXTERNAL_SPOOL_TRAY_ID}"
 # Trays are numbered globally across AMS units, four trays per unit.
 TRAYS_PER_AMS = 4
 
-# Written to SpoolEvent.source so the origin shows up in FilaMan's spool log.
-CONSUMPTION_SOURCE = "bambu_usage"
-
-# The Bambu Lab driver plugin this one reads its slot state from.
-REQUIRED_DRIVER_KEY = "bambulab"
-
 
 def tray_to_slot_index(tray: int) -> str:
     """Translate a global Bambu tray number into FilaMan's slot_index.
@@ -65,24 +63,6 @@ def tray_to_slot_index(tray: int) -> str:
     if tray < 0:
         return EXTERNAL_SLOT_INDEX
     return f"{tray // TRAYS_PER_AMS}-{tray % TRAYS_PER_AMS}"
-
-
-async def list_bambu_printers() -> list[dict]:
-    """Return the active printers driven by the Bambu Lab plugin.
-
-    Credentials come out of Printer.driver_config, so the user configures a
-    printer exactly once, in FilaMan. This plugin never asks for them again.
-    """
-    raise NotImplementedError
-
-
-async def resolve_spool_for_slot(printer_id: int, slot_index: str) -> int | None:
-    """Look up which FilaMan spool currently sits in *slot_index*.
-
-    Returns None when the slot is unknown or holds nothing, which is a normal
-    outcome and not an error.
-    """
-    raise NotImplementedError
 
 
 async def start_print(
