@@ -55,7 +55,13 @@
     "object": "{count} object",
     "objects": "{count} objects",
     "nozzle": "{mm} mm nozzle",
-    "estimate": "{duration} estimated"
+    "estimate": "{duration} estimated",
+    "search": "Search by file name",
+    "hideFailed": "hide failed",
+    "orderNewest": "Newest first",
+    "orderOldest": "Oldest first",
+    "orderLargest": "Longest first",
+    "noMatch": "No print matches this filter"
   },
   "printType": {
     "cloud": "cloud print",

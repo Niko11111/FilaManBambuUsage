@@ -55,7 +55,13 @@
     "object": "{count} Objekt",
     "objects": "{count} Objekte",
     "nozzle": "{mm} mm Düse",
-    "estimate": "geschätzt {duration}"
+    "estimate": "geschätzt {duration}",
+    "search": "Nach Dateiname suchen",
+    "hideFailed": "fehlgeschlagene ausblenden",
+    "orderNewest": "Neueste zuerst",
+    "orderOldest": "Älteste zuerst",
+    "orderLargest": "Längste zuerst",
+    "noMatch": "Kein Druck passt zu diesem Filter"
   },
   "printType": {
     "cloud": "Cloud-Druck",

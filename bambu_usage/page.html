@@ -466,6 +466,21 @@
     .print-meta span, .badge { display: inline-flex; align-items: center; gap: 6px; }
     .icon-button .icon { width: 1.1em; height: 1.1em; }
 
+    .filters {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 4px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .filters .check { margin-bottom: 0; }
+    .filters .check input { margin-top: 0; }
+    .search { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 200px; }
+    .search input { flex: 1; }
+    .search .icon { color: var(--text-muted); }
+
     .print-preview { cursor: zoom-in; }
 
     .picker { min-width: min(620px, 78vw); }
@@ -566,6 +581,22 @@
 
     <section class="fm-card">
       <h2 class="fm-card-header" data-i18n="history.heading"></h2>
+
+      <div class="filters">
+        <label class="search">
+          <input type="text" id="history-search" data-i18n-placeholder="history.search" />
+        </label>
+        <label class="check">
+          <input type="checkbox" id="history-hide-failed" />
+          <span data-i18n="history.hideFailed"></span>
+        </label>
+        <select id="history-order">
+          <option value="newest" data-i18n="history.orderNewest"></option>
+          <option value="oldest" data-i18n="history.orderOldest"></option>
+          <option value="largest" data-i18n="history.orderLargest"></option>
+        </select>
+      </div>
+
       <div id="history"></div>
       <button type="button" id="load-more" class="button ghost" data-i18n="history.loadMore" hidden></button>
     </section>
@@ -648,6 +679,7 @@
       var GLOBAL_PRINTER_ID = 0;
       var EXTERNAL_SLOT_INDEX = '255-254';
       var SAVED_VISIBLE_MS = 2500;
+      var SEARCH_DELAY_MS = 300;
 
       // Written out rather than built from the status string, so every key is
       // visible to the test that checks the dictionaries against the page.
@@ -686,6 +718,10 @@
       var printers = [];
       var settingsRows = new Map();
       var historyOffset = 0;
+      // What the list is filtered by right now. On the server, so that the
+      // pages behind the button are filtered as well.
+      var historyFilter = { search: '', hideFailed: false, order: 'newest' };
+      var searchTimer = null;
       var currency = '';
       var runningIds = new Set();
       var booted = false;
@@ -1024,7 +1060,8 @@
       function loadHistory(reset) {
         if (reset) historyOffset = 0;
         var size = reset ? HISTORY_INITIAL : HISTORY_MORE;
-        var query = MOUNT + '/history?limit=' + size + '&offset=' + historyOffset;
+        var query = MOUNT + '/history?limit=' + size + '&offset=' + historyOffset
+          + filterQuery();
 
         return read(query).then(function (records) {
           var target = document.getElementById('history');
@@ -1058,13 +1095,26 @@
 
           document.getElementById('running-card').hidden = !running.firstChild;
           if (reset && !finished) {
-            target.appendChild(el('p', 'empty', t('history.none')));
+            // Two different emptinesses: nothing recorded at all, or nothing
+            // left after filtering. Saying "no print yet" to somebody who just
+            // typed a search term would send them looking for a bug.
+            var filtering = historyFilter.search || historyFilter.hideFailed;
+            target.appendChild(el('p', 'empty', t(filtering ? 'history.noMatch' : 'history.none')));
           }
 
           historyOffset += shown;
           document.getElementById('load-more').hidden = !held && records.length < size;
           updateRunningLive();
         });
+      }
+
+      function filterQuery() {
+        var parts = ['&order=' + encodeURIComponent(historyFilter.order)];
+        if (historyFilter.search) {
+          parts.push('&search=' + encodeURIComponent(historyFilter.search));
+        }
+        if (historyFilter.hideFailed) parts.push('&hide_failed=true');
+        return parts.join('');
       }
 
       function refreshRunning() {
@@ -1764,6 +1814,27 @@
 
       document.getElementById('load-more').addEventListener('click', function () {
         loadHistory(false).catch(complain);
+      });
+
+      var search = document.getElementById('history-search');
+      withIcon(search.parentNode, 'search');
+      search.addEventListener('input', function () {
+        // One request per pause, not per keystroke.
+        window.clearTimeout(searchTimer);
+        searchTimer = window.setTimeout(function () {
+          historyFilter.search = search.value.trim();
+          loadHistory(true).catch(complain);
+        }, SEARCH_DELAY_MS);
+      });
+
+      document.getElementById('history-hide-failed').addEventListener('change', function () {
+        historyFilter.hideFailed = this.checked;
+        loadHistory(true).catch(complain);
+      });
+
+      document.getElementById('history-order').addEventListener('change', function () {
+        historyFilter.order = this.value;
+        loadHistory(true).catch(complain);
       });
       document.getElementById('settings-form').addEventListener('submit', saveSettings);
       document.getElementById('settings-scope').addEventListener('change', fillSettings);

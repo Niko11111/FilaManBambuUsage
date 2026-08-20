@@ -52,6 +52,72 @@ class StoreTest(unittest.IsolatedAsyncioTestCase):
         values.update(overrides)
         return await store.create_print(db, **values)
 
+    async def three_prints(self, db):
+        """One finished, one cancelled, one older, with different names."""
+        await self.make_print(
+            db, file_name="cube.3mf", subtask_id="a", status=models.STATUS_FINISHED,
+            started_at=NOW, estimated_seconds=600,
+        )
+        await self.make_print(
+            db, file_name="Balcony_stopper.3mf", subtask_id="b", status=models.STATUS_CANCELLED,
+            started_at=NOW - timedelta(hours=1), estimated_seconds=7200,
+        )
+        await self.make_print(
+            db, file_name="cube_v2.3mf", subtask_id="c", status=models.STATUS_FINISHED,
+            started_at=NOW - timedelta(days=2), estimated_seconds=60,
+        )
+        await db.commit()
+
+    async def test_the_search_matches_a_part_of_the_file_name(self):
+        async with self.sessions() as db:
+            await self.three_prints(db)
+            found = await store.list_prints(db, search="cube")
+
+        self.assertEqual([row.file_name for row in found], ["cube.3mf", "cube_v2.3mf"])
+
+    async def test_the_search_ignores_case(self):
+        async with self.sessions() as db:
+            await self.three_prints(db)
+            found = await store.list_prints(db, search="BALCONY")
+
+        self.assertEqual([row.file_name for row in found], ["Balcony_stopper.3mf"])
+
+    async def test_a_wildcard_in_the_search_is_not_a_wildcard(self):
+        # An underscore means "any character" to LIKE. A file name full of them
+        # would otherwise match everything the moment somebody types one.
+        async with self.sessions() as db:
+            await self.three_prints(db)
+            found = await store.list_prints(db, search="cube_")
+
+        self.assertEqual([row.file_name for row in found], ["cube_v2.3mf"])
+
+    async def test_hiding_failed_leaves_the_stopped_ones_out(self):
+        async with self.sessions() as db:
+            await self.three_prints(db)
+            found = await store.list_prints(db, hide_failed=True)
+
+        self.assertEqual([row.file_name for row in found], ["cube.3mf", "cube_v2.3mf"])
+
+    async def test_the_order_can_be_turned_around(self):
+        async with self.sessions() as db:
+            await self.three_prints(db)
+            newest = await store.list_prints(db, order="newest")
+            oldest = await store.list_prints(db, order="oldest")
+            longest = await store.list_prints(db, order="largest")
+
+        self.assertEqual(newest[0].file_name, "cube.3mf")
+        self.assertEqual(oldest[0].file_name, "cube_v2.3mf")
+        self.assertEqual(longest[0].file_name, "Balcony_stopper.3mf")
+
+    async def test_an_unknown_order_falls_back_to_newest(self):
+        # The endpoint refuses anything else, but the query must not depend on
+        # somebody else's validation to stay sane.
+        async with self.sessions() as db:
+            await self.three_prints(db)
+            found = await store.list_prints(db, order="sideways")
+
+        self.assertEqual(found[0].file_name, "cube.3mf")
+
     async def test_a_column_added_later_reaches_an_existing_table(self):
         """The update path: a table created by an older version gains a column.
 

@@ -332,6 +332,12 @@ nozzle. Each carries a small monochrome icon. They live inline in `page.html` as
 them draws in `currentColor` so it takes the colour of whatever it sits next
 to, in all three themes.
 
+Above the list sits a search by file name, a switch that leaves the failed ones
+out, and a sort order. All three are answered by the query in `store.list_prints`
+rather than by the page, because a filter that only searches the four records
+already loaded is not a filter. The sort order is an allow list and the search
+term is escaped, so neither can become a way to read something else.
+
 While a print runs its card is fetched again on every poll, so what it has used
 so far grows with it; the finished list below is left alone and keeps however
 much of it is unfolded.

@@ -26,7 +26,15 @@ if TYPE_CHECKING:  # imported for annotations only
     from .schemas import PrinterStatus, PrintRecord
 
 
-async def get_history(db: AsyncSession, limit: int = 50, offset: int = 0) -> list[PrintRecord]:
+async def get_history(
+    db: AsyncSession,
+    limit: int = 50,
+    offset: int = 0,
+    *,
+    search: str | None = None,
+    hide_failed: bool = False,
+    order: str = "newest",
+) -> list[PrintRecord]:
     """Return prints, newest first, with their filament breakdown.
 
     ``printer_name`` and ``spool_label`` are left empty on purpose. The page
@@ -37,7 +45,9 @@ async def get_history(db: AsyncSession, limit: int = 50, offset: int = 0) -> lis
     from . import filaman, store
     from .schemas import FilamentUsage, PrintRecord
 
-    prints = await store.list_prints(db, limit=limit, offset=offset)
+    prints = await store.list_prints(
+        db, limit=limit, offset=offset, search=search, hide_failed=hide_failed, order=order
+    )
     rows = await store.list_filaments_for(db, [int(entry.id) for entry in prints])
 
     by_print: dict[int, list[Any]] = {}

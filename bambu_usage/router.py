@@ -35,12 +35,13 @@ import contextlib
 import logging
 import re
 from pathlib import Path
+from typing import Literal
 
 from app.api.deps import DBSession, RequirePermission, require_auth
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import SQLAlchemyError
 
-from . import __version__, filaman, models, schemas, service, settings, views
+from . import __version__, filaman, models, schemas, service, settings, store, views
 
 logger = logging.getLogger(__name__)
 
@@ -308,10 +309,18 @@ async def history(
     db: DBSession,
     limit: int = Query(default=50, ge=1, le=MAX_HISTORY_LIMIT),
     offset: int = Query(default=0, ge=0),
+    search: str | None = Query(default=None, max_length=store.MAX_SEARCH_LENGTH),
+    hide_failed: bool = Query(default=False),
+    # A Literal rather than a string: FastAPI then refuses anything else before
+    # it reaches the query, which is what keeps a sort order from becoming a way
+    # to read other tables.
+    order: Literal["newest", "oldest", "largest"] = Query(default="newest"),
 ) -> list[schemas.PrintRecord]:
     """Prints, newest first, with their filament breakdown."""
     try:
-        return await views.get_history(db, limit=limit, offset=offset)
+        return await views.get_history(
+            db, limit=limit, offset=offset, search=search, hide_failed=hide_failed, order=order
+        )
     except SQLAlchemyError as exc:
         raise _database_unavailable(exc) from exc
 

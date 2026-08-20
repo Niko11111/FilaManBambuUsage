@@ -25,7 +25,13 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import delete, insert, select, update
 
-from .models import OPEN_STATUSES, filament_table, printer_status_table, prints_table
+from .models import (
+    OPEN_STATUSES,
+    STOPPED_STATUSES,
+    filament_table,
+    printer_status_table,
+    prints_table,
+)
 
 if TYPE_CHECKING:  # imported for annotations only
     from datetime import datetime
@@ -187,16 +193,60 @@ async def find_open_print(db: AsyncSession, printer_id: int) -> Any | None:
     return result.first()
 
 
-async def list_prints(db: AsyncSession, limit: int = 50, offset: int = 0) -> list[Any]:
-    """Prints, newest first. The thumbnail is left out, it is served separately."""
+# How the history can be sorted. An allow list rather than a column name off
+# the query string, which is how a filter turns into a way to read other tables.
+PRINT_ORDERS = ("newest", "oldest", "largest")
+
+# Longer than any file name a printer reports, and short enough that the LIKE
+# stays cheap.
+MAX_SEARCH_LENGTH = 200
+
+
+async def list_prints(
+    db: AsyncSession,
+    limit: int = 50,
+    offset: int = 0,
+    *,
+    search: str | None = None,
+    hide_failed: bool = False,
+    order: str = "newest",
+) -> list[Any]:
+    """Prints, newest first. The thumbnail is left out, it is served separately.
+
+    Filtering happens here rather than in the page. A filter that only searches
+    the handful of records already loaded is not a filter, it is a coincidence.
+    """
     columns = [column for column in prints_table.c if column.name != "thumbnail"]
-    result = await db.execute(
-        select(*columns)
-        .order_by(prints_table.c.started_at.desc(), prints_table.c.id.desc())
-        .limit(limit)
-        .offset(offset)
-    )
-    return list(result.all())
+    statement = select(*columns)
+
+    if search:
+        # Escaped, because a file name may legitimately hold a percent sign and
+        # would otherwise match everything from there on.
+        needle = search.strip()[:MAX_SEARCH_LENGTH]
+        needle = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        statement = statement.where(
+            prints_table.c.file_name.ilike(f"%{needle}%", escape="\\")
+        )
+
+    if hide_failed:
+        statement = statement.where(prints_table.c.status.notin_(sorted(STOPPED_STATUSES)))
+
+    return list((await db.execute(_ordered(statement, order).limit(limit).offset(offset))).all())
+
+
+def _ordered(statement: Any, order: str) -> Any:
+    """Apply one of PRINT_ORDERS, falling back to newest for anything else.
+
+    The id decides between two prints that started in the same second, so paging
+    can never show one twice and skip another.
+    """
+    if order == "oldest":
+        return statement.order_by(prints_table.c.started_at.asc(), prints_table.c.id.asc())
+    if order == "largest":
+        return statement.order_by(
+            prints_table.c.estimated_seconds.desc().nullslast(), prints_table.c.id.desc()
+        )
+    return statement.order_by(prints_table.c.started_at.desc(), prints_table.c.id.desc())
 
 
 async def list_filaments(db: AsyncSession, print_id: int) -> list[Any]:
