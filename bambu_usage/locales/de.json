@@ -27,6 +27,7 @@
     "remaining": "noch {minutes} min, fertig um {end}",
     "openPrinter": "Drucker in FilaMan öffnen",
     "none": "Noch kein Druck erfasst. Der nächste auf einem überwachten Drucker landet hier.",
+    "preview": "Plate-Vorschau, zum Vergrößern klicken",
     "loadMore": "Mehr anzeigen",
     "filament": "Filament",
     "slot": "Slot",

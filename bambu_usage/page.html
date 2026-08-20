@@ -213,13 +213,18 @@
       color: var(--text-muted);
       font-size: 0.85rem;
       display: flex;
+      align-items: center;
       gap: 10px;
       flex-wrap: wrap;
       margin-bottom: 10px;
     }
     .badge {
-      display: inline-block;
-      padding: 1px 10px;
+      /* inline-flex, not inline-block: a flex item stretches to the height of
+         its row, and the text would then sit at the top of a pill that is
+         taller than it needs to be. */
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 10px;
       border-radius: 999px;
       background: var(--bg-soft);
       border: 1px solid var(--border);
@@ -298,6 +303,38 @@
     .saved { color: var(--success-text); font-size: 0.85rem; margin-left: 10px; }
     .empty { color: var(--text-muted); font-size: 0.9rem; }
 
+    /* One overlay for everything that needs the whole window: the plate
+       preview at its real size, and the spool picker. */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .overlay[hidden] { display: none; }
+    .overlay-box {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+      padding: 16px;
+      max-width: min(900px, 100%);
+      max-height: 100%;
+      overflow: auto;
+    }
+    .overlay-image {
+      display: block;
+      max-width: 100%;
+      max-height: 78vh;
+      border-radius: var(--radius-sm);
+    }
+
+    .print-preview { cursor: zoom-in; }
+
     footer { color: var(--text-muted); font-size: 0.8rem; text-align: center; margin-top: 32px; }
 
     @media (max-width: 620px) {
@@ -373,6 +410,10 @@
     <footer data-i18n="page.footer"></footer>
   </div>
 
+  <div class="overlay" id="overlay" hidden>
+    <div class="overlay-box" id="overlay-box"></div>
+  </div>
+
   <script>
     (function () {
       'use strict';
@@ -385,6 +426,7 @@
       // Four, because one of them may be the print that is running and moves
       // into its own card. Three finished ones are what fits without scrolling.
       var HISTORY_INITIAL = 4;
+      var HISTORY_VISIBLE = 3;
       var HISTORY_MORE = 10;
       var STATUS_INTERVAL_MS = 10000;
       var SPOOL_PAGE_SIZE = 200;
@@ -724,13 +766,25 @@
           }
 
           var finished = 0;
+          var shown = 0;
+          var held = 0;
+
           records.forEach(function (record) {
             if (runningIds.has(record.id)) {
               running.appendChild(renderPrint(record, true));
-            } else {
-              target.appendChild(renderPrint(record, false));
-              finished += 1;
+              shown += 1;
+              return;
             }
+            // A long history makes the page long. Three is what fits, the rest
+            // is behind the button, and what is not shown is not counted into
+            // the offset either.
+            if (reset && finished >= HISTORY_VISIBLE) {
+              held += 1;
+              return;
+            }
+            target.appendChild(renderPrint(record, false));
+            finished += 1;
+            shown += 1;
           });
 
           document.getElementById('running-card').hidden = !running.firstChild;
@@ -738,8 +792,8 @@
             target.appendChild(el('p', 'empty', t('history.none')));
           }
 
-          historyOffset += records.length;
-          document.getElementById('load-more').hidden = records.length < size;
+          historyOffset += shown;
+          document.getElementById('load-more').hidden = !held && records.length < size;
           updateRunningLive();
         });
       }
@@ -797,7 +851,14 @@
         if (record.has_thumbnail) {
           var preview = el('img', 'print-preview');
           preview.src = MOUNT + '/thumb/' + record.id;
-          preview.alt = '';
+          preview.alt = t('history.preview');
+          preview.title = t('history.preview');
+          preview.addEventListener('click', function () {
+            var large = el('img', 'overlay-image');
+            large.src = preview.src;
+            large.alt = preview.alt;
+            openOverlay(large);
+          });
           wrapper.appendChild(preview);
         } else {
           wrapper.appendChild(el('div', 'print-preview'));
@@ -1037,6 +1098,18 @@
         return cell;
       }
 
+      function openOverlay(content) {
+        var box = document.getElementById('overlay-box');
+        box.textContent = '';
+        box.appendChild(content);
+        document.getElementById('overlay').hidden = false;
+      }
+
+      function closeOverlay() {
+        document.getElementById('overlay').hidden = true;
+        document.getElementById('overlay-box').textContent = '';
+      }
+
       function act(button, promise) {
         clearComplaint();
         button.disabled = true;
@@ -1112,6 +1185,14 @@
       }
 
       /* ── boot ────────────────────────────────────────────────── */
+
+      document.getElementById('overlay').addEventListener('click', function (event) {
+        // Only the backdrop closes. A click inside the box belongs to the box.
+        if (event.target === this) closeOverlay();
+      });
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') closeOverlay();
+      });
 
       document.getElementById('load-more').addEventListener('click', function () {
         loadHistory(false).catch(complain);

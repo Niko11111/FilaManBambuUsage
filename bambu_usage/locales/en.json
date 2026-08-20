@@ -27,6 +27,7 @@
     "remaining": "{minutes} min left, done at {end}",
     "openPrinter": "Open the printer in FilaMan",
     "none": "No print recorded yet. The next one on a watched printer lands here.",
+    "preview": "Plate preview, click to enlarge",
     "loadMore": "Show more",
     "filament": "Filament",
     "slot": "Slot",
