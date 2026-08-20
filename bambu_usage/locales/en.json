@@ -45,6 +45,8 @@
   "errors": {
     "notImplemented": "Not implemented yet",
     "databaseUnavailable": "The plugin database is not available",
+    "notFound": "Not found",
+    "bookingFailed": "The booking could not be carried out",
     "localesMissing": "Translation files are missing from the installed plugin"
   }
 }

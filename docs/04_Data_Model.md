@@ -79,6 +79,16 @@ The service handles all of the following itself:
 - aggregating events from the same source that fall close together, recording
   `aggregation_count` and `first_event_at` in `meta`
 - carrying `remaining_weight_g` forward and clamping it at 0
+- **committing the session**, on every path through the call
+
+That last one is not a detail. It fixes the transaction boundaries for everything
+that books, which is why the commits of this plugin sit in `service.py` and are
+ordered the way `01_Design.md` section 11 describes.
+
+A correction downwards cannot go through this call at all: a positive value is
+turned into a deduction, so material is only ever taken away. Giving some back
+is `record_adjustment(spool, "relative", delta_weight_g=...)`, where a positive
+delta raises the remaining weight.
 
 **The plugin recomputes none of this.** It passes grams and a timestamp and
 relies on the service. `source="bambu_usage"` makes the origin visible in

@@ -7,6 +7,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+# The database layer cannot be exercised on the standard library alone. These
+# three are optional, documented in pyproject.toml, and the tests that need them
+# skip themselves when they are absent, so the suite still runs without setup.
+try:
+    import aiosqlite  # noqa: F401
+    import pydantic  # noqa: F401
+    import sqlalchemy  # noqa: F401
+
+    HAS_TEST_DEPENDENCIES = True
+except ImportError:  # pragma: no cover, depends on the environment
+    HAS_TEST_DEPENDENCIES = False
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PACKAGE_DIR = REPO_ROOT / "bambu_usage"
 LOCALES_DIR = PACKAGE_DIR / "locales"

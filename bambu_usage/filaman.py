@@ -57,6 +57,10 @@ CONFIG_ACCESS_CODE = "access_code"
 # bridge between a tray number out of ams_mapping and a FilaMan spool.
 SLOT_INDEX_FIELD = "slot_index"
 
+# FilaMan's own word for a correction that moves the remaining weight by a given
+# amount, in either direction.
+ADJUSTMENT_RELATIVE = "relative"
+
 
 class FilaManUnavailableError(RuntimeError):
     """FilaMan's internals are not importable, or they have moved."""
@@ -250,12 +254,42 @@ async def record_consumption(
     that forms the audit trail, aggregates events from the same source that fall
     close together and clamps the remaining weight at zero. This plugin
     recomputes none of that.
+
+    **The call commits the session**, on every path through it. Whatever this
+    plugin has pending in the same session is committed along with it, which is
+    what decides the order of operations in service.py.
     """
     (SpoolService,) = _import_names("app.services.spool_service", "SpoolService")
     await SpoolService(db).record_consumption(
         spool,
         delta_weight_g=grams,
         event_at=event_at,
+        source=CONSUMPTION_SOURCE,
+        note=note,
+    )
+
+
+async def record_adjustment(
+    db: AsyncSession,
+    spool: Any,
+    delta_grams: float,
+    event_at: datetime,
+    note: str | None = None,
+) -> None:
+    """Move the remaining weight of *spool* by *delta_grams*.
+
+    Positive puts material back, negative takes more away. This is the only way
+    to correct a booking downwards: record_consumption turns a positive value
+    into a deduction and can therefore never give anything back.
+
+    Commits the session, exactly like record_consumption.
+    """
+    (SpoolService,) = _import_names("app.services.spool_service", "SpoolService")
+    await SpoolService(db).record_adjustment(
+        spool,
+        adjustment_type=ADJUSTMENT_RELATIVE,
+        event_at=event_at,
+        delta_weight_g=delta_grams,
         source=CONSUMPTION_SOURCE,
         note=note,
     )

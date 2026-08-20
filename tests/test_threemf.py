@@ -186,7 +186,8 @@ class ParseArchiveTest(unittest.TestCase):
                 "Metadata/plate_no_light_1.png": ONE_PIXEL_PNG,
             }
         )
-        self.assertIsNone(parse(archive).thumbnail)
+        with self.assertLogs("bambu_usage.threemf", level="WARNING"):
+            self.assertIsNone(parse(archive).thumbnail)
 
     def test_malformed_slice_info_is_tolerated(self):
         archive = self.build(

@@ -5,9 +5,10 @@ deducts the filament used by a Bambu Lab print from the matching FilaMan spool,
 automatically.
 
 > **Status: stage 2 in progress.**
-> The plugin builds, installs, creates its own tables and stores its settings,
-> but it does not track anything yet: no printer connection, no booking. The
-> full design is in [`docs/01_Design.md`](docs/01_Design.md).
+> The plugin builds, installs, keeps its own tables and settings, reads a 3MF
+> and books a print against the matching spools, history included. What is
+> missing is the piece that notices a print at all: nothing connects to a
+> printer yet. The full design is in [`docs/01_Design.md`](docs/01_Design.md).
 
 ## Why
 

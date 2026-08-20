@@ -354,6 +354,7 @@ switched off, filament order from the plate gcode.
 | `threemf.py` | fetching and reading the 3MF, purely functional | no | no |
 | `service.py` | resolving slots, computing consumption, deducting | no | no |
 | `filaman.py` | the only module that reads FilaMan's own models and services | no | no |
+| `store.py` | the queries on the plugin's own tables | no | no |
 | `models.py` | the plugin's tables and their lifecycle | no | no |
 | `settings.py` | loading and storing settings | no | no |
 | `schemas.py` | Pydantic models for the router | no | no |
@@ -374,8 +375,22 @@ import time.
 **Sessions are passed, never opened deep inside.** Every function that touches
 the database takes an `AsyncSession` as its first argument. The router hands
 down the session from FilaMan's `DBSession` dependency, the listeners open one
-through `filaman.session_scope()`. That way one unit of work stays one
-transaction, and the caller decides when it is committed.
+through `filaman.session_scope()`.
+
+**The commits live in `service.py`, and that is forced.**
+`SpoolService.record_consumption()` commits the session itself, on every path
+through it, so nothing above it can own a transaction that spans a booking. The
+consequences are worked out where they matter:
+
+- A print is committed when it starts, so it survives a restart in the middle.
+- The end status of a print is committed before anything is booked, so a failed
+  booking cannot erase how the print ended.
+- Inside a booking the filament rows are marked **before** the call, so the mark
+  and the booking land in the same commit. A failure rolls back only that
+  spool's marks, and everything already committed stays booked and is never
+  booked twice, because a row carrying a `spent_at` is not picked up again.
+
+A caller must therefore not wrap these functions in a transaction of its own.
 
 These boundaries are not a matter of taste. `tools/check_architecture.py`
 parses the imports and fails the build when one of them is crossed.

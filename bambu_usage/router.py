@@ -36,10 +36,10 @@ import re
 from pathlib import Path
 
 from app.api.deps import DBSession, RequirePermission, require_auth
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import SQLAlchemyError
 
-from . import __version__, filaman, models, schemas, settings
+from . import __version__, filaman, models, schemas, service, settings
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,20 @@ SETTINGS_PERMISSION = "printers:update"
 # consumption event on a spool, so they borrow the permission FilaMan uses for
 # exactly that on its own endpoints.
 CONSUMPTION_PERMISSION = "spool_events:create_consumption"
+
+# Correcting an amount downwards gives material back, which FilaMan books as an
+# adjustment rather than a consumption. The permission follows the event.
+ADJUSTMENT_PERMISSION = "spool_events:create_adjustment"
+
+# Upper bound on one history page, so a client cannot ask for everything at once.
+MAX_HISTORY_LIMIT = 200
+
+# A stored preview is a PNG. The fallback only matters for a row written before
+# the mime column was filled.
+THUMBNAIL_FALLBACK_MIME = "image/png"
+
+# A preview never changes once stored, so it may be cached for a day.
+THUMBNAIL_CACHE_SECONDS = 86400
 
 # Set once the plugin's tables have been ensured in this worker. The lock keeps
 # concurrent first requests from racing each other into create_all.
@@ -123,6 +137,27 @@ def _database_unavailable(exc: Exception) -> HTTPException:
             "code": "errors.databaseUnavailable",
             "message": "The plugin database is not available",
         },
+    )
+
+
+def _booking_failed(exc: Exception) -> HTTPException:
+    """Turn a refused booking into a translatable answer.
+
+    Everything service.py refuses is a conflict rather than a server fault: the
+    print, the row or the spool is not in a state the request assumes. The
+    message says which, the code is what the page translates.
+    """
+    return HTTPException(
+        status.HTTP_409_CONFLICT,
+        detail={"code": "errors.bookingFailed", "message": str(exc)},
+    )
+
+
+def _not_found() -> HTTPException:
+    """Nothing to return under this id."""
+    return HTTPException(
+        status.HTTP_404_NOT_FOUND,
+        detail={"code": "errors.notFound", "message": "Not found"},
     )
 
 
@@ -257,46 +292,100 @@ async def printer_status() -> list[schemas.PrinterStatus]:
     response_model=list[schemas.PrintRecord],
     dependencies=[Depends(require_auth), Depends(ensure_ready)],
 )
-async def history(limit: int = 50, offset: int = 0) -> list[schemas.PrintRecord]:
-    """Prints, newest first."""
-    raise _not_implemented()
+async def history(
+    db: DBSession,
+    limit: int = Query(default=50, ge=1, le=MAX_HISTORY_LIMIT),
+    offset: int = Query(default=0, ge=0),
+) -> list[schemas.PrintRecord]:
+    """Prints, newest first, with their filament breakdown."""
+    try:
+        return await service.get_history(db, limit=limit, offset=offset)
+    except SQLAlchemyError as exc:
+        raise _database_unavailable(exc) from exc
 
 
 @router.get(
     "/thumb/{print_id}",
     dependencies=[Depends(require_auth), Depends(ensure_ready)],
 )
-async def thumbnail(print_id: int) -> Response:
+async def thumbnail(print_id: int, db: DBSession) -> Response:
     """Plate preview of one print.
 
     Served from the database because the plugin ZIP may not carry image files.
     See docs/01_Design.md section 8.1.
     """
-    raise _not_implemented()
+    try:
+        found = await service.get_thumbnail(db, print_id)
+    except SQLAlchemyError as exc:
+        raise _database_unavailable(exc) from exc
+
+    if found is None:
+        raise _not_found()
+
+    payload, media_type = found
+    # media_type is explicit here, as it must be on every raw Response. Without
+    # it this endpoint answers 404 in a way that looks like a routing bug.
+    return Response(
+        content=payload,
+        media_type=media_type or THUMBNAIL_FALLBACK_MIME,
+        headers={"Cache-Control": f"max-age={THUMBNAIL_CACHE_SECONDS}"},
+    )
 
 
 @admin_router.post(
     "/filament/{filament_row_id}/assign",
+    status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[RequirePermission(CONSUMPTION_PERMISSION), Depends(ensure_ready)],
 )
-async def assign_spool(filament_row_id: int, body: schemas.AssignSpoolRequest) -> None:
+async def assign_spool(
+    filament_row_id: int,
+    body: schemas.AssignSpoolRequest,
+    db: DBSession,
+) -> None:
     """Assign a spool to a filament row after the fact."""
-    raise _not_implemented()
+    try:
+        await service.assign_spool(db, filament_row_id, body.spool_id, body.spend_now)
+    except service.UsageError as exc:
+        raise _booking_failed(exc) from exc
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        raise _database_unavailable(exc) from exc
 
 
 @admin_router.post(
     "/filament/{filament_row_id}/correct",
-    dependencies=[RequirePermission(CONSUMPTION_PERMISSION), Depends(ensure_ready)],
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[RequirePermission(ADJUSTMENT_PERMISSION), Depends(ensure_ready)],
 )
-async def correct_usage(filament_row_id: int, body: schemas.CorrectUsageRequest) -> None:
+async def correct_usage(
+    filament_row_id: int,
+    body: schemas.CorrectUsageRequest,
+    db: DBSession,
+) -> None:
     """Override the booked amount for one filament row."""
-    raise _not_implemented()
+    try:
+        await service.correct_usage(db, filament_row_id, body.grams)
+    except service.UsageError as exc:
+        raise _booking_failed(exc) from exc
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        raise _database_unavailable(exc) from exc
 
 
 @admin_router.post(
     "/print/{print_id}/spend",
+    response_model=dict[int, float],
     dependencies=[RequirePermission(CONSUMPTION_PERMISSION), Depends(ensure_ready)],
 )
-async def spend_print(print_id: int) -> None:
-    """Book a print that was recorded but not deducted, for auto_spend off."""
-    raise _not_implemented()
+async def spend_print(print_id: int, db: DBSession) -> dict[int, float]:
+    """Book a print that was recorded but not deducted, for auto_spend off.
+
+    Returns the grams booked, keyed by spool id.
+    """
+    try:
+        return await service.spend_print(db, print_id)
+    except service.UsageError as exc:
+        raise _booking_failed(exc) from exc
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        raise _database_unavailable(exc) from exc

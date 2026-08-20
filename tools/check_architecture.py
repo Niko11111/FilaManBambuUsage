@@ -39,6 +39,7 @@ PLUGIN_MODULES = {
     "settings",
     "router",
     "filaman",
+    "store",
 }
 
 # FilaMan's own package. Only filaman.py may reach into it, so that a FilaMan
@@ -56,6 +57,15 @@ FORBIDDEN_IMPORTS: dict[str, dict[str, str]] = {
         "router": "business logic must not depend on the HTTP layer",
         "bambulabs_api": "business logic must stay callable without a printer",
         "fastapi": "business logic must stay callable without a web framework",
+        FILAMAN_PACKAGE: FILAMAN_PACKAGE_REASON,
+    },
+    "store.py": {
+        "tracker": "the queries must not depend on the runtime",
+        "router": "the queries must not depend on the HTTP layer",
+        "service": "the queries must not depend on the business logic",
+        "filaman": "our own tables and FilaMan's are read by different modules",
+        "bambulabs_api": "no printer access from the database layer",
+        "fastapi": "the database layer stays callable without a web framework",
         FILAMAN_PACKAGE: FILAMAN_PACKAGE_REASON,
     },
     "filaman.py": {

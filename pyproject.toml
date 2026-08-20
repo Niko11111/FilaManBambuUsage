@@ -32,6 +32,17 @@ ignore = [
 [tool.ruff.format]
 quote-style = "double"
 
+# Optional test dependencies. The suite runs without them, the tests that need a
+# database skip themselves (see tests/_support.py). Install them to exercise the
+# booking path, which is the one thing that must never break:
+#
+#   python3.11 -m venv .venv
+#   .venv/bin/pip install "sqlalchemy[asyncio]>=2.0" aiosqlite pydantic
+#   .venv/bin/python -m unittest discover -s tests -t .
+#
+# Pydantic is in the list because schemas.py uses `X | None`, which it only
+# evaluates on Python 3.10 and newer. None of these ever ship in the plugin ZIP.
+
 [tool.pytest.ini_options]
 # The suite runs on plain unittest as well:
 #   python3 -m unittest discover -s tests -t .

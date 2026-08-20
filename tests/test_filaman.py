@@ -60,22 +60,28 @@ class ToBambuPrinterTest(unittest.TestCase):
         self.assertIsNotNone(_to_bambu_printer(FakePrinter(config)))
 
     def test_no_config_at_all_is_skipped(self):
-        self.assertIsNone(_to_bambu_printer(FakePrinter(None)))
+        # Skipping quietly would leave the user wondering why one printer is
+        # never tracked, so every skip says so in the log.
+        with self.assertLogs("bambu_usage.filaman", level="WARNING"):
+            self.assertIsNone(_to_bambu_printer(FakePrinter(None)))
 
     def test_a_config_that_is_not_an_object_is_skipped(self):
-        self.assertIsNone(_to_bambu_printer(FakePrinter("192.168.4.50")))
+        with self.assertLogs("bambu_usage.filaman", level="WARNING"):
+            self.assertIsNone(_to_bambu_printer(FakePrinter("192.168.4.50")))
 
     def test_every_missing_credential_is_skipped(self):
         for key in ("host", "serial", "access_code"):
             with self.subTest(missing=key):
                 config = {k: v for k, v in COMPLETE_CONFIG.items() if k != key}
-                self.assertIsNone(_to_bambu_printer(FakePrinter(config)))
+                with self.assertLogs("bambu_usage.filaman", level="WARNING"):
+                    self.assertIsNone(_to_bambu_printer(FakePrinter(config)))
 
     def test_an_empty_credential_counts_as_missing(self):
         # A half configured printer is worse than an unconfigured one, because
         # the connection attempt would fail on every reconnect.
         config = dict(COMPLETE_CONFIG, access_code="")
-        self.assertIsNone(_to_bambu_printer(FakePrinter(config)))
+        with self.assertLogs("bambu_usage.filaman", level="WARNING"):
+            self.assertIsNone(_to_bambu_printer(FakePrinter(config)))
 
     def test_a_numeric_access_code_survives_as_a_string(self):
         # JSON keeps 12345678 as a number if it was ever written as one.
