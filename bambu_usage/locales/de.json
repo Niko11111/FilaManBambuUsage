@@ -47,7 +47,8 @@
     "bookedIs": "gebucht {grams}",
     "layers": "{count} Layer",
     "timespan": "{from} bis {to}",
-    "edit": "Spule oder Menge ändern"
+    "edit": "Spule oder Menge ändern",
+    "usedSoFar": "bisher {grams}"
   },
   "printType": {
     "cloud": "Cloud-Druck",

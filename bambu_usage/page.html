@@ -779,10 +779,11 @@
           runningIds = next;
           updateRunningLive();
 
+          if (!booted) return null;
           // A print that started or ended moves between the two cards, and only
           // a fresh history knows which one it belongs in now.
-          if (changed && booted) return loadHistory(true);
-          return null;
+          if (changed) return loadHistory(true);
+          return refreshRunning();
         });
       }
 
@@ -964,6 +965,25 @@
         });
       }
 
+      function refreshRunning() {
+        // What a running print has used grows with every layer, so its card is
+        // fetched again on every poll. Only that card is replaced: the finished
+        // list keeps its scroll position and however much of it is unfolded.
+        if (!runningIds.size) return Promise.resolve(null);
+
+        return read(MOUNT + '/history?limit=' + HISTORY_INITIAL + '&offset=0').then(function (records) {
+          var running = document.getElementById('running');
+          running.textContent = '';
+
+          records.forEach(function (record) {
+            if (runningIds.has(record.id)) running.appendChild(renderPrint(record, true));
+          });
+
+          document.getElementById('running-card').hidden = !running.firstChild;
+          updateRunningLive();
+        });
+      }
+
       function updateRunningLive() {
         // Redrawn on every poll, so the bar follows the printer without the
         // history being fetched again.
@@ -1091,6 +1111,13 @@
           })));
         }
 
+        var soFar = usedSoFar(record);
+        if (isRunning && soFar !== null) {
+          badges.appendChild(el('span', 'badge', t('history.usedSoFar', {
+            grams: grams(soFar)
+          })));
+        }
+
         if (!record.spent && bookable(record)) {
           var book = el('button', 'button ghost', t('history.book'));
           book.type = 'button';
@@ -1102,6 +1129,17 @@
 
         head.appendChild(badges);
         return head;
+      }
+
+      function usedSoFar(record) {
+        // Null rather than zero when no filament has an answer, because "0 g so
+        // far" and "nobody knows yet" are different things.
+        var total = null;
+        record.filaments.forEach(function (usage) {
+          if (usage.used_so_far === null || usage.used_so_far === undefined) return;
+          total = (total || 0) + usage.used_so_far;
+        });
+        return total;
       }
 
       function printFacts(record) {
@@ -1206,6 +1244,9 @@
 
       function filamentFigures(usage) {
         var parts = [t('history.estimatedIs', { grams: grams(usage.estimated_grams) })];
+        if (usage.used_so_far !== null && usage.used_so_far !== undefined) {
+          parts.push(t('history.usedSoFar', { grams: grams(usage.used_so_far) }));
+        }
         parts.push(usage.spent_at
           ? t('history.bookedIs', { grams: grams(usage.spent_grams) })
           : t('history.notBooked'));

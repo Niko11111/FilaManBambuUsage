@@ -233,6 +233,13 @@ progress leaves the row open for a correction rather than getting a made up
 number, because an invented amount on a spool cannot be told apart from a real
 one afterwards.
 
+The same curve answers a second question while the print is still running: what
+it has used **so far**. The page shows it per filament and as a total, computed
+with the arithmetic the booking would use, so the figure grows towards exactly
+what will be deducted at the end rather than towards a second opinion. It is
+display only, nothing is ever booked from it, and without a curve it stays
+empty for the reason above.
+
 ## 7. Failure cases
 
 Each of these needs defined behaviour. Quietly doing nothing is not behaviour.
@@ -302,6 +309,10 @@ name and the outcome as a badge, a line of facts underneath (printer, whether
 the job came from the cloud or from the printer itself, when it ran, how many
 layers), and then one block per filament with its colour, its slot, the spool it
 was booked against and the two weights.
+
+While a print runs its card is fetched again on every poll, so what it has used
+so far grows with it; the finished list below is left alone and keeps however
+much of it is unfolded.
 
 A block whose spool is still open is highlighted, because that is the only thing
 the page ever asks of a human. Everything that can be changed about one filament

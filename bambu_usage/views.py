@@ -47,9 +47,13 @@ async def get_history(db: AsyncSession, limit: int = 50, offset: int = 0) -> lis
     prices = await filaman.load_spool_prices(
         db, sorted({int(row.spool_id) for row in rows if row.spool_id is not None})
     )
+    live_layers = await _live_layers(db)
 
     records = []
     for entry in prints:
+        layer = live_layers.get(int(entry.id))
+        curves = store.decode_layer_shares(entry.layer_shares) if layer else {}
+
         filaments = [
             FilamentUsage(
                 id=int(row.id),
@@ -62,6 +66,7 @@ async def get_history(db: AsyncSession, limit: int = 50, offset: int = 0) -> lis
                 spent_grams=row.spent_grams,
                 spent_at=row.spent_at,
                 manual_override=bool(row.manual_override),
+                used_so_far=_used_so_far(row, curves, layer),
                 from_fraction=row.from_fraction,
                 to_fraction=row.to_fraction,
             )
@@ -87,6 +92,34 @@ async def get_history(db: AsyncSession, limit: int = 50, offset: int = 0) -> lis
         )
 
     return records
+
+
+async def _live_layers(db: AsyncSession) -> dict[int, int]:
+    """Which print each printer is on right now, and which layer it reached.
+
+    Read from the status rows because they are what the listeners keep current;
+    the print row itself only learns the layer when the print stops.
+    """
+    from . import store
+
+    return {
+        int(row.current_print_id): int(row.layer_num)
+        for row in await store.list_printer_status(db)
+        if row.current_print_id is not None and row.layer_num
+    }
+
+
+def _used_so_far(row: Any, curves: dict[int, list[float]], layer: int | None) -> float | None:
+    """What a running print has laid down of one filament by now.
+
+    Deliberately the same arithmetic the booking uses for a print that stopped,
+    so the figure somebody watches grows towards exactly what will be booked
+    rather than towards a second opinion. Without a curve there is no answer:
+    the share of the layers says nothing about a filament used only at the end,
+    and a wrong number here would be read as fact.
+    """
+    share = rules.share_at_layer(curves.get(int(row.filament_id)), layer)
+    return None if share is None else rules.share_of(row, share)
 
 
 def _layer_count(stored: str | None) -> int | None:

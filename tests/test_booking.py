@@ -486,6 +486,80 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
         # No price on either spool, so no claim about what it cost.
         self.assertIsNone(record.cost)
 
+    async def test_a_running_print_says_what_it_has_used_so_far(self):
+        # Filament 2 is laid down only in the last layer. At layer two of three
+        # the answer for it is zero, and the linear share would have claimed
+        # two thirds: the same difference the booking of an abort turns on.
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        metadata = self.two_filaments()
+        metadata.layer_shares = {1: [0.5, 0.8, 1.0], 2: [0.0, 0.0, 1.0]}
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1], metadata=metadata)
+            await store.upsert_printer_status(
+                db,
+                printer_id=1,
+                printer_name="X1C",
+                connected=True,
+                tracking_enabled=True,
+                updated_at=NOW,
+                current_print_id=print_id,
+                layer_num=2,
+            )
+            await db.commit()
+
+            history = await views.get_history(db)
+
+        # 80 per cent of 41.2 for the one, nothing at all for the other.
+        self.assertEqual(
+            [usage.used_so_far for usage in history[0].filaments], [41.2 * 0.8, 0.0]
+        )
+        # Nothing was booked by looking at it.
+        self.assertEqual(self.consumptions, [])
+
+    async def test_a_print_nobody_is_printing_has_no_used_so_far(self):
+        # A finished print says what was booked; a second, differently computed
+        # number beside it would only invite the question which one is true.
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        metadata = self.two_filaments()
+        metadata.layer_shares = {1: [0.5, 0.8, 1.0], 2: [0.0, 0.0, 1.0]}
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1], metadata=metadata)
+            await service.finish_print(db, print_id, models.STATUS_FINISHED, AUTO, NOW)
+
+            history = await views.get_history(db)
+
+        self.assertEqual([usage.used_so_far for usage in history[0].filaments], [None, None])
+
+    async def test_without_a_curve_a_running_print_claims_nothing(self):
+        # The share of the layers is not the share of a filament, and a number
+        # that looks like a measurement is worse than an empty field.
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            await store.upsert_printer_status(
+                db,
+                printer_id=1,
+                printer_name="X1C",
+                connected=True,
+                tracking_enabled=True,
+                updated_at=NOW,
+                current_print_id=print_id,
+                layer_num=2,
+            )
+            await db.commit()
+
+            history = await views.get_history(db)
+
+        self.assertEqual([usage.used_so_far for usage in history[0].filaments], [None, None])
+
     async def test_the_history_carries_what_the_print_cost(self):
         self.slots = {"0-0": 7, "0-1": 8}
         self.have_spools(7, 8)

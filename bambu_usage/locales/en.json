@@ -47,7 +47,8 @@
     "bookedIs": "booked {grams}",
     "layers": "{count} layers",
     "timespan": "{from} to {to}",
-    "edit": "Change the spool or the amount"
+    "edit": "Change the spool or the amount",
+    "usedSoFar": "{grams} so far"
   },
   "printType": {
     "cloud": "cloud print",
