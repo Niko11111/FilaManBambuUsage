@@ -171,6 +171,34 @@ a correction stay traceable and comparable against the scale.
 `spool_id` being `NULL` is the normal outcome for a local print in stage 1, and
 what triggers the highlight in the history.
 
+### bambu_usage_printer_status
+
+Live state, not history. One row per watched printer, always current, never
+accumulating.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `printer_id` | int, PK | |
+| `printer_name` | str, nullable | shown on the page without a second lookup |
+| `connected` | bool | whether the listener has an MQTT connection |
+| `tracking_enabled` | bool | a printer with tracking off still gets a row, so it is visible as off rather than absent |
+| `current_print_id` | int, nullable | the running print |
+| `current_file_name` | str, nullable | |
+| `progress_percent` | int, nullable | from `mc_percent` |
+| `last_error` | str, nullable | the last failure concerning this printer |
+| `updated_at` | datetime | how fresh the row is |
+
+**Why a table and not memory.** The listeners run in one worker process while
+the plugin page is answered by any of the four, so nothing kept in memory would
+be visible to the request that has to render it. FilaMan solves the same problem
+for its drivers with shared memory (`shared_health_store`); a table is simpler
+here, survives a restart and is readable with `sqlite3` when something is wrong.
+
+The row is written when a listener connects, disconnects, starts or ends a
+print, fails, and once per reconcile round as a heartbeat. Not on every MQTT
+message: a printer reports about once a second, and none of that is worth a
+write.
+
 ## 5. The resolution chain in full
 
 ```

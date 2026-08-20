@@ -331,6 +331,72 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
             print_id = await self.start(db, [0, 1])
             self.assertEqual(await service.get_thumbnail(db, print_id), (b"PNGDATA", "image/png"))
 
+    async def test_a_print_joined_in_the_middle_is_never_booked(self):
+        # How much of it ran before this plugin was listening is unknowable, so
+        # the estimate would overstate. It is recorded and left alone.
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        async with self.sessions() as db:
+            print_id = await service.start_print(
+                db,
+                printer_id=1,
+                file_name="cube.3mf",
+                print_type="cloud",
+                metadata=self.two_filaments(),
+                ams_mapping=[0, 1],
+                subtask_id="task-1",
+                started_at=NOW,
+                status=models.STATUS_INCOMPLETE,
+            )
+            await service.finish_print(db, print_id, models.STATUS_FINISHED, AUTO, NOW)
+
+            record = await store.get_print(db, print_id)
+
+        self.assertEqual(self.consumptions, [])
+        self.assertEqual(record.status, models.STATUS_INCOMPLETE)
+        self.assertIsNotNone(record.finished_at)
+
+    async def test_a_print_without_its_3mf_keeps_saying_so(self):
+        # Relabelling it as finished would hide the one thing worth seeing.
+        async with self.sessions() as db:
+            print_id = await service.start_print(
+                db,
+                printer_id=1,
+                file_name="cube.3mf",
+                print_type="cloud",
+                metadata=PrintMetadata(),
+                ams_mapping=[],
+                subtask_id="task-1",
+                started_at=NOW,
+                status=models.STATUS_NO_3MF,
+            )
+            await service.finish_print(db, print_id, models.STATUS_FINISHED, AUTO, NOW)
+
+            self.assertEqual((await store.get_print(db, print_id)).status, models.STATUS_NO_3MF)
+
+    async def test_such_a_print_can_still_be_booked_by_hand(self):
+        # Automatic booking refuses, a human may still decide otherwise.
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        async with self.sessions() as db:
+            print_id = await service.start_print(
+                db,
+                printer_id=1,
+                file_name="cube.3mf",
+                print_type="cloud",
+                metadata=self.two_filaments(),
+                ams_mapping=[0, 1],
+                subtask_id="task-1",
+                started_at=NOW,
+                status=models.STATUS_INCOMPLETE,
+            )
+            await service.finish_print(db, print_id, models.STATUS_FINISHED, AUTO, NOW)
+            booked = await service.spend_print(db, print_id)
+
+        self.assertEqual(booked, {7: 41.2, 8: 12.5})
+
     async def test_booking_a_print_that_does_not_exist(self):
         async with self.sessions() as db:
             with self.assertRaises(service.UsageError):

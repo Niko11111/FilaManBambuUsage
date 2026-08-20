@@ -40,6 +40,7 @@ PLUGIN_MODULES = {
     "router",
     "filaman",
     "store",
+    "supervisor",
 }
 
 # FilaMan's own package. Only filaman.py may reach into it, so that a FilaMan
@@ -105,6 +106,15 @@ FORBIDDEN_IMPORTS: dict[str, dict[str, str]] = {
     },
     "tracker.py": {
         "router": "the runtime must not depend on the HTTP layer",
+        "supervisor": "a listener must not know who decided to run it",
+        FILAMAN_PACKAGE: FILAMAN_PACKAGE_REASON,
+    },
+    "supervisor.py": {
+        "router": "the runtime must not depend on the HTTP layer",
+        "service": "starting listeners is not business logic, that goes through tracker",
+        "threemf": "the supervisor never reads a 3MF, the listener does",
+        "bambulabs_api": "only a listener talks to a printer",
+        "fastapi": "the runtime stays callable without a web framework",
         FILAMAN_PACKAGE: FILAMAN_PACKAGE_REASON,
     },
 }

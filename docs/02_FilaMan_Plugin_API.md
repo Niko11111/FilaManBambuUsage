@@ -163,15 +163,21 @@ compound:
 earliest moment any code of this plugin can run. Whatever has to happen once,
 the tables included, hangs off that.
 
-For the MQTT listeners this leaves two routes. Stage 2 decides between them with
-what the first installation shows:
+For the MQTT listeners this left two routes, and the first installation settled
+it. **Measured on the test instance:** 38 of 100 calls to `/bambu-usage/health`
+came back from a worker that had not run its own one-time setup, and the image
+starts `gunicorn -w 4`. Starting listeners on the first request would therefore
+have made tracking depend on which of four processes a request happened to hit.
 
-- **start on first request.** Cheap and honest, but tracking only begins once
-  somebody opens the plugin page or touches one of its endpoints after a
-  restart.
-- **an own event loop in a daemon thread**, started at import time. Independent
-  of any request, at the price of a second SQLAlchemy engine, because a
-  connection pool cannot be shared across event loops.
+**Chosen: an own event loop in a daemon thread**, started while the package is
+imported, plus an exclusive `fcntl.flock` on a lock file of our own that decides
+which single worker connects. The other three keep checking and take over when
+the owner dies. The price is a second SQLAlchemy engine, because a connection
+pool belongs to the loop that created it; it is built from FilaMan's own
+`settings.database_url` in `filaman.create_background_engine()`.
+
+The rejected route, starting on the first request, remains cheap and honest and
+would be the right answer in a single worker deployment.
 
 Either way the listeners need:
 

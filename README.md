@@ -4,11 +4,12 @@ A plugin for [FilaMan](https://github.com/Fire-Devils/filaman-system) that
 deducts the filament used by a Bambu Lab print from the matching FilaMan spool,
 automatically.
 
-> **Status: stage 2 in progress.**
-> The plugin builds, installs, keeps its own tables and settings, reads a 3MF
-> and books a print against the matching spools, history included. What is
-> missing is the piece that notices a print at all: nothing connects to a
-> printer yet. The full design is in [`docs/01_Design.md`](docs/01_Design.md).
+> **Status: stage 2, tracking works, the page does not show it yet.**
+> The plugin listens to every Bambu Lab printer FilaMan knows, reads the 3MF of
+> a starting print, and books the consumed filament against the matching spools
+> when the print finishes. What is still the placeholder from stage 1 is the
+> page: history, status and settings are served by the API but not yet drawn.
+> The full design is in [`docs/01_Design.md`](docs/01_Design.md).
 
 ## Why
 

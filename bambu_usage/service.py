@@ -52,7 +52,7 @@ if TYPE_CHECKING:  # imported for annotations only, keeps the module import-ligh
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from .schemas import PluginSettings, PrintRecord
+    from .schemas import PluginSettings, PrinterStatus, PrintRecord
     from .threemf import FilamentInfo, PrintMetadata
 
 logger = logging.getLogger(__name__)
@@ -166,12 +166,19 @@ async def start_print(
     ams_mapping: list[Any],
     subtask_id: str | None = None,
     started_at: datetime | None = None,
+    status: str | None = None,
 ) -> int:
     """Record a beginning print and return its id.
 
     Idempotent on (printer_id, subtask_id), falling back to
     (printer_id, file_name, started_at) when the printer reports no subtask id,
     so a repeated MQTT message does not create a second print.
+
+    *status* overrides the normal "running", for the two cases where a print is
+    recorded although it can never be booked: attaching in the middle of one,
+    and a 3MF that could not be fetched. Both belong in the history all the
+    same, because a print that vanishes without trace is worse than one without
+    numbers.
 
     Commits, because from here on the print has to survive a restart: the
     booking happens at the end, and the mapping resolved now is what it will be
@@ -194,7 +201,7 @@ async def start_print(
         printer_id=printer_id,
         file_name=file_name,
         print_type=print_type,
-        status=STATUS_RUNNING,
+        status=status or STATUS_RUNNING,
         started_at=moment,
         subtask_id=subtask_id,
         plate_id=metadata.plate_id,
@@ -257,11 +264,28 @@ async def finish_print(
 
     The status is committed before anything is booked. A booking that fails must
     not take the record of how the print ended down with it.
+
+    A print that cannot be booked keeps the status that says so and is never
+    booked automatically. That covers one the plugin joined in the middle, where
+    the mapping was never seen, and one whose 3MF could not be fetched, where
+    there are no amounts at all. Relabelling either as a normal finish would
+    hide the very thing the history is meant to show. See docs/01_Design.md
+    section 7.
     """
     from . import store
-    from .models import STATUS_FINISHED
+    from .models import STATUS_FINISHED, UNBOOKABLE_STATUSES
+
+    record = await store.get_print(db, print_id)
+    if record is None:
+        raise UsageError(f"print {print_id} does not exist")
 
     moment = finished_at or datetime.now(timezone.utc)
+
+    if record.status in UNBOOKABLE_STATUSES:
+        await store.set_print_status(db, print_id, record.status, finished_at=moment)
+        await db.commit()
+        return
+
     await store.set_print_status(db, print_id, status, finished_at=moment)
     await db.commit()
 
@@ -448,6 +472,31 @@ async def get_history(db: AsyncSession, limit: int = 50, offset: int = 0) -> lis
         )
 
     return records
+
+
+async def get_printer_status(db: AsyncSession) -> list[PrinterStatus]:
+    """Return what the listeners last wrote about themselves.
+
+    Read from the database rather than from the listeners, because they live in
+    one worker process while this is answered by any of the four. The database
+    is the only place all of them can see.
+    """
+    from . import store
+    from .schemas import PrinterStatus
+
+    return [
+        PrinterStatus(
+            printer_id=int(row.printer_id),
+            printer_name=row.printer_name or "",
+            connected=bool(row.connected),
+            tracking_enabled=bool(row.tracking_enabled),
+            current_print_id=row.current_print_id,
+            current_file_name=row.current_file_name,
+            progress_percent=row.progress_percent,
+            last_error=row.last_error,
+        )
+        for row in await store.list_printer_status(db)
+    ]
 
 
 async def get_thumbnail(db: AsyncSession, print_id: int) -> tuple[bytes, str] | None:

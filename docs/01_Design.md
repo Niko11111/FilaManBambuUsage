@@ -58,9 +58,13 @@ printer management.
 `plugin_manager.start_all()` starts drivers only, and only per printer. It gets
 no startup hook either: FilaMan mounts the router while the module is imported,
 before an event loop exists, and its own `lifespan` makes router `on_startup`
-handlers inert. The first request into the plugin's own router is therefore the
-earliest moment any of its code can run. Details and the consequence for the
-listeners in `02_FilaMan_Plugin_API.md` section 4.
+handlers inert.
+
+The import itself is therefore the only hook, and there is no event loop at that
+moment. The listeners consequently run in a daemon thread with a loop of their
+own, started from `__init__.py`, and an exclusive `fcntl.flock` picks the single
+worker of four that connects to the printers. Details in
+`02_FilaMan_Plugin_API.md` section 4.
 
 ## 4. Why an own MQTT connection
 
@@ -350,7 +354,8 @@ switched off, filament order from the plate gcode.
 
 | Module | Responsibility | Knows MQTT | Knows HTTP |
 |---|---|---|---|
-| `tracker.py` | listener per printer, state machine, reconciling the printer list | yes | no |
+| `tracker.py` | one listener per printer: what a report means and what to do about it | yes | no |
+| `supervisor.py` | which worker runs the listeners, and keeping their list current | no | no |
 | `threemf.py` | fetching and reading the 3MF, purely functional | no | no |
 | `service.py` | resolving slots, computing consumption, deducting | no | no |
 | `filaman.py` | the only module that reads FilaMan's own models and services | no | no |
@@ -362,6 +367,10 @@ switched off, filament order from the plate gcode.
 
 Separating `tracker.py` from `service.py` is deliberate, see section 4: it is
 the price of being able to move to the event bus later without a rebuild.
+`supervisor.py` sits next to it for a different reason: how a listener is
+started is a question about worker processes and lock files, and what a report
+means is a question about printers. One file answering both could not be
+described in a sentence.
 
 `filaman.py` exists for the same kind of reason. Every coupling to FilaMan's
 internals, listed in `02_FilaMan_Plugin_API.md` section 8, lives in that one

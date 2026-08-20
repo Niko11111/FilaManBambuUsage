@@ -61,6 +61,11 @@ SLOT_INDEX_FIELD = "slot_index"
 # amount, in either direction.
 ADJUSTMENT_RELATIVE = "relative"
 
+# What FilaMan passes to SQLite so several workers wait for each other instead of
+# failing with "database is locked". The listeners open their own connection and
+# have to be just as patient. Taken from app/core/database.py.
+SQLITE_BUSY_TIMEOUT_SECONDS = 30
+
 
 class FilaManUnavailableError(RuntimeError):
     """FilaMan's internals are not importable, or they have moved."""
@@ -293,3 +298,33 @@ async def record_adjustment(
         source=CONSUMPTION_SOURCE,
         note=note,
     )
+
+
+def create_background_engine() -> AsyncEngine:
+    """Build a database engine for the listeners' own event loop.
+
+    A connection pool belongs to the loop that created it, so the listeners
+    cannot borrow FilaMan's engine from their thread. URL and the SQLite
+    specific arguments come from FilaMan's own configuration, so both engines
+    behave the same against the same file.
+
+    The caller owns the engine and has to dispose of it.
+    """
+    (create_async_engine,) = _import_names("sqlalchemy.ext.asyncio", "create_async_engine")
+    (config,) = _import_names("app.core.config", "settings")
+
+    url = str(config.database_url)
+    arguments: dict[str, Any] = {}
+    if url.startswith("sqlite"):
+        arguments["connect_args"] = {
+            "check_same_thread": False,
+            "timeout": SQLITE_BUSY_TIMEOUT_SECONDS,
+        }
+
+    return create_async_engine(url, **arguments)
+
+
+def background_sessions(engine: AsyncEngine) -> Any:
+    """Return a session maker bound to *engine*."""
+    (async_sessionmaker,) = _import_names("sqlalchemy.ext.asyncio", "async_sessionmaker")
+    return async_sessionmaker(engine, expire_on_commit=False)

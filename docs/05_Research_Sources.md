@@ -89,6 +89,19 @@ own.
 | An own table with private `MetaData`, `create(checkfirst=True)` | `spoolmanapi/settings.py` |
 | Hard wired to German, no i18n | `spoolmanapi/page.html`, `lang="de"` and literal strings |
 
+## 2b. Evidence in bambulabs_api
+
+Read as of 2026-08-20, MIT.
+
+| Claim | Location |
+|---|---|
+| `PrinterMQTTClient(hostname, access, serial)` sets up implicit TLS, credentials and the subscription to `device/<serial>/report` | `bambulabs_api/mqtt_client.py`, `__init__` and `_on_connect` |
+| `on_message_handler` hands out the **raw** paho message, so no second MQTT library is needed | `bambulabs_api/mqtt_client.py`, `_on_message` |
+| A `pushall` is sent on connect, which is what makes a printer report its full state instead of only the next change | `bambulabs_api/mqtt_client.py`, `_on_connect` |
+| `download_file()` buffers the whole archive in a `BytesIO` | `bambulabs_api/ftp_client.py` |
+| `connect_and_run` catches every exception, logs it and returns `None`, so a refused connection looks like an empty file | `bambulabs_api/ftp_client.py` |
+| The FTPS socket timeout is left unset, which means block forever | `bambulabs_api/ftp_client.py`, `connect_and_run` |
+
 ## 3. Evidence in OpenSpoolMan
 
 | Claim | Location |

@@ -31,6 +31,7 @@ time and cannot be fetched lazily.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import re
 from pathlib import Path
@@ -161,14 +162,6 @@ def _not_found() -> HTTPException:
     )
 
 
-def _not_implemented() -> HTTPException:
-    """Stub response carrying a translatable code plus an English fallback."""
-    return HTTPException(
-        status.HTTP_501_NOT_IMPLEMENTED,
-        detail={"code": "errors.notImplemented", "message": "Not implemented yet"},
-    )
-
-
 def _load_locale(language: str) -> str | None:
     """Return the raw JSON of one dictionary, or None if there is no such file."""
     path = LOCALES_DIR / f"{language}.json"
@@ -179,19 +172,28 @@ def _load_locale(language: str) -> str | None:
 
 
 @router.get("/health", response_model=schemas.HealthResponse)
-async def health() -> schemas.HealthResponse:
+async def health(db: DBSession) -> schemas.HealthResponse:
     """Liveness of the plugin.
 
-    Answers without touching the database or any printer, so it stays a reliable
-    answer to the question whether the plugin is mounted. ``tables_ready`` tells
-    whether this worker has run its one-time setup yet, which is the only way to
-    see from outside that a request driven bootstrap took place.
+    **Never fails on the database.** Its job is to answer whether the plugin is
+    mounted at all, and an answer that disappears when the database hiccups is
+    no answer. The tracking figures are read from the status table rather than
+    from this process, because the listeners run in one worker out of four and
+    asking the local process would say "no" three times out of four.
+
+    ``tables_ready`` stays a fact about this worker: whether it has run its own
+    one-time setup, which is the only way to see a request driven bootstrap from
+    outside.
     """
+    watched: list[schemas.PrinterStatus] = []
+    with contextlib.suppress(SQLAlchemyError, filaman.FilaManUnavailableError):
+        watched = await service.get_printer_status(db)
+
     return schemas.HealthResponse(
         plugin="bambu_usage",
         version=__version__,
-        tracking_active=False,
-        printers_watched=0,
+        tracking_active=any(entry.connected for entry in watched),
+        printers_watched=len(watched),
         tables_ready=_tables_ready.is_set(),
     )
 
@@ -280,11 +282,14 @@ async def put_settings(
 @router.get(
     "/status",
     response_model=list[schemas.PrinterStatus],
-    dependencies=[Depends(require_auth)],
+    dependencies=[Depends(require_auth), Depends(ensure_ready)],
 )
-async def printer_status() -> list[schemas.PrinterStatus]:
-    """Live state of every listener."""
-    raise _not_implemented()
+async def printer_status(db: DBSession) -> list[schemas.PrinterStatus]:
+    """Live state of every listener, as they last recorded it."""
+    try:
+        return await service.get_printer_status(db)
+    except SQLAlchemyError as exc:
+        raise _database_unavailable(exc) from exc
 
 
 @router.get(

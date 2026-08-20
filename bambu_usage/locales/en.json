@@ -43,7 +43,6 @@
     "networkValue": "MQTT and FTPS on the LAN, no Bambu cloud"
   },
   "errors": {
-    "notImplemented": "Not implemented yet",
     "databaseUnavailable": "The plugin database is not available",
     "notFound": "Not found",
     "bookingFailed": "The booking could not be carried out",

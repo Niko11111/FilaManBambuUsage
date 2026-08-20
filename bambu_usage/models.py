@@ -9,6 +9,12 @@ uninstall keeps the recorded history around for a later reinstall.
 key into FilaMan's tables would either block deleting a spool or silently take
 the history with it. History should outlive the spool it refers to.
 
+``bambu_usage_printer_status`` is the odd one out: it holds live state, not
+history. It exists because the listeners run in one worker process while the
+plugin page is answered by any of the four, so the only place all of them can
+see is the database. Its rows are always current and never accumulate, one per
+watched printer.
+
 Column semantics are documented in docs/04_Data_Model.md.
 
 May import: sqlalchemy. Must not import tracker, router, service or schemas.
@@ -56,6 +62,14 @@ STATUS_FAILED = "failed"
 STATUS_CANCELLED = "cancelled"
 STATUS_INCOMPLETE = "incomplete"
 STATUS_NO_3MF = "no_3mf"
+
+# A print in one of these has not ended yet, whatever else is true about it. A
+# listener that reattaches after a restart looks for exactly these.
+OPEN_STATUSES = frozenset({STATUS_RUNNING, STATUS_INCOMPLETE, STATUS_NO_3MF})
+
+# ... and in one of these it can never be booked, so ending it must not quietly
+# relabel it as a normal finish.
+UNBOOKABLE_STATUSES = frozenset({STATUS_INCOMPLETE, STATUS_NO_3MF})
 
 
 settings_table = Table(
@@ -121,6 +135,21 @@ filament_table = Table(
     Column("spent_grams", Float, nullable=True),
     Column("spent_at", DateTime(timezone=True), nullable=True),
     Column("manual_override", Boolean, nullable=False, default=False),
+)
+
+
+printer_status_table = Table(
+    f"{TABLE_PREFIX}printer_status",
+    metadata,
+    Column("printer_id", Integer, primary_key=True),
+    Column("printer_name", String(255), nullable=True),
+    Column("connected", Boolean, nullable=False, default=False),
+    Column("tracking_enabled", Boolean, nullable=False, default=True),
+    Column("current_print_id", Integer, nullable=True),
+    Column("current_file_name", String(512), nullable=True),
+    Column("progress_percent", Integer, nullable=True),
+    Column("last_error", String(512), nullable=True),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 
 

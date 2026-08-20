@@ -21,9 +21,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import delete, insert, select, update
 
-from .models import STATUS_RUNNING, filament_table, prints_table
+from .models import OPEN_STATUSES, filament_table, printer_status_table, prints_table
 
 if TYPE_CHECKING:  # imported for annotations only
     from datetime import datetime
@@ -135,16 +135,18 @@ async def find_print_by_start(
 
 
 async def find_open_print(db: AsyncSession, printer_id: int) -> Any | None:
-    """The newest still running print of one printer.
+    """The newest print of one printer that has not ended yet.
 
     This is how a listener picks a print back up after FilaMan restarted in the
-    middle of it.
+    middle of it. "Open" covers more than running: a print recorded without its
+    3MF, or one the plugin joined in the middle, is just as unfinished and would
+    otherwise stay open for good.
     """
     result = await db.execute(
         select(prints_table)
         .where(
             prints_table.c.printer_id == printer_id,
-            prints_table.c.status == STATUS_RUNNING,
+            prints_table.c.status.in_(OPEN_STATUSES),
         )
         .order_by(prints_table.c.started_at.desc())
         .limit(1)
@@ -301,3 +303,63 @@ async def read_thumbnail(db: AsyncSession, print_id: int) -> tuple[bytes, str] |
         return None
 
     return bytes(row.thumbnail), row.thumbnail_mime or ""
+
+
+async def upsert_printer_status(
+    db: AsyncSession,
+    *,
+    printer_id: int,
+    printer_name: str | None,
+    connected: bool,
+    tracking_enabled: bool,
+    updated_at: datetime,
+    current_print_id: int | None = None,
+    current_file_name: str | None = None,
+    progress_percent: int | None = None,
+    last_error: str | None = None,
+) -> None:
+    """Write the live state of one listener.
+
+    An update that hits no row becomes an insert, the same portable pattern the
+    settings use. This row is the only place the other worker processes can see
+    what the listeners are doing.
+    """
+    values = {
+        "printer_name": printer_name,
+        "connected": connected,
+        "tracking_enabled": tracking_enabled,
+        "current_print_id": current_print_id,
+        "current_file_name": current_file_name,
+        "progress_percent": progress_percent,
+        "last_error": last_error,
+        "updated_at": updated_at,
+    }
+
+    result = await db.execute(
+        update(printer_status_table)
+        .where(printer_status_table.c.printer_id == printer_id)
+        .values(**values)
+    )
+    if result.rowcount == 0:
+        await db.execute(insert(printer_status_table).values(printer_id=printer_id, **values))
+
+
+async def list_printer_status(db: AsyncSession) -> list[Any]:
+    """The live state of every watched printer."""
+    result = await db.execute(
+        select(printer_status_table).order_by(printer_status_table.c.printer_id)
+    )
+    return list(result.all())
+
+
+async def forget_printers(db: AsyncSession, keep: list[int]) -> None:
+    """Drop the status rows of printers that are no longer watched.
+
+    A printer removed or deactivated in FilaMan would otherwise keep a stale row
+    on the page for good.
+    """
+    statement = delete(printer_status_table)
+    if keep:
+        statement = statement.where(printer_status_table.c.printer_id.not_in(keep))
+
+    await db.execute(statement)

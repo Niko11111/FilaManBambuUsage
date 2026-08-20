@@ -94,6 +94,21 @@ class StoreTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual((await store.find_open_print(db, 1)).id, newest)
 
+    async def test_an_open_print_is_more_than_a_running_one(self):
+        # A print recorded without its 3MF, or one joined in the middle, is just
+        # as unfinished. Missing them here leaves them open for good.
+        for status in (models.STATUS_INCOMPLETE, models.STATUS_NO_3MF):
+            with self.subTest(status=status):
+                async with self.sessions() as db:
+                    print_id = await self.make_print(db, subtask_id=status, status=status)
+                    await db.commit()
+
+                    found = await store.find_open_print(db, 1)
+                    self.assertEqual(found.id, print_id)
+
+                    await store.set_print_status(db, print_id, models.STATUS_FINISHED)
+                    await db.commit()
+
     async def test_filament_rows_keep_the_slicer_order(self):
         async with self.sessions() as db:
             print_id = await self.make_print(db)
@@ -205,6 +220,64 @@ class StoreTest(unittest.IsolatedAsyncioTestCase):
             await db.commit()
 
             self.assertEqual(await models.purge_expired_history(db, retention_days=0, now=NOW), 0)
+
+
+    async def test_the_status_row_is_written_once_and_then_updated(self):
+        async with self.sessions() as db:
+            for connected in (False, True):
+                await store.upsert_printer_status(
+                    db,
+                    printer_id=1,
+                    printer_name="X1C",
+                    connected=connected,
+                    tracking_enabled=True,
+                    updated_at=NOW,
+                    current_file_name="cube.3mf",
+                )
+            await db.commit()
+
+            rows = await store.list_printer_status(db)
+            # One printer, one row, however often it reports.
+            self.assertEqual(len(rows), 1)
+            self.assertTrue(rows[0].connected)
+            self.assertEqual(rows[0].current_file_name, "cube.3mf")
+
+    async def test_a_printer_that_is_gone_loses_its_row(self):
+        async with self.sessions() as db:
+            for printer_id in (1, 2, 3):
+                await store.upsert_printer_status(
+                    db,
+                    printer_id=printer_id,
+                    printer_name=f"printer {printer_id}",
+                    connected=True,
+                    tracking_enabled=True,
+                    updated_at=NOW,
+                )
+            await db.commit()
+
+            # A printer removed or deactivated in FilaMan would otherwise sit on
+            # the page as connected for good.
+            await store.forget_printers(db, [1, 3])
+            await db.commit()
+
+            self.assertEqual([row.printer_id for row in await store.list_printer_status(db)], [1, 3])
+
+    async def test_forgetting_everything(self):
+        async with self.sessions() as db:
+            await store.upsert_printer_status(
+                db,
+                printer_id=1,
+                printer_name="X1C",
+                connected=True,
+                tracking_enabled=True,
+                updated_at=NOW,
+            )
+            await db.commit()
+
+            await store.forget_printers(db, [])
+            await db.commit()
+
+            self.assertEqual(await store.list_printer_status(db), [])
 
 
 if __name__ == "__main__":
