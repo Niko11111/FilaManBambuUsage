@@ -83,6 +83,13 @@ before the endpoints answer.
   serial and access code come from
 - The printer reachable on the LAN over MQTT and FTPS. The Bambu cloud is not
   used
+- **LAN-only mode and Developer Mode enabled on the printer.** Not for this
+  plugin, which only reads, but for the thing it reads: FilaMan records which
+  spool sits in which tray only after the printer has accepted the assignment
+  and reported the tray back. A printer without those two settings answers
+  `unauthorized user`, nothing is stored, and every print then lands in the
+  history with its slots unassigned. They can still be assigned by hand on the
+  plugin's own page, and the booking then works as usual.
 
 ## Languages
 

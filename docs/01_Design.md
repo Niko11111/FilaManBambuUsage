@@ -235,6 +235,7 @@ Each of these needs defined behaviour. Quietly doing nothing is not behaviour.
 | Case | Behaviour |
 |---|---|
 | No `PrinterSlotAssignment.spool_id` on the slot | Print lands in the history, the row is marked "assignment open" and offers a dropdown to assign a spool. Do not guess. |
+| **Every** slot without an assignment, on every print | Not a fault of this plugin and not repairable by it. FilaMan can only record an assignment once the printer has accepted it, which a Bambu printer refuses unless LAN-only mode and Developer Mode are both on. See the README and `05_Research_Sources.md`. The history stays usable: assign by hand, book, done. |
 | External spool, `slot_index` `"255-254"` | Treated like any other slot. FilaMan keeps it as a regular slot. |
 | Print aborted or failed | Do not deduct. Record the status, offer correction. |
 | 3MF unavailable (FTPS fails, file deleted) | Record the print with its file name and no consumption, status "3mf missing". Never drop it silently, or the print disappears without trace. |
