@@ -44,6 +44,21 @@ An additional benefit: FilaMan's Bambu Lab driver already declares
 `bambulabs_api>=2.6.0` as a dependency. With both plugins installed, the library
 is there regardless.
 
+**Two things about `PrinterFTPClient` this plugin works around**, read out of
+`bambulabs_api/ftp_client.py`:
+
+- `download_file()` collects the whole archive into a `BytesIO`, so a 3MF of
+  tens of megabytes lands in the worker's memory.
+- Its `connect_and_run` decorator wraps the call in `except Exception`, logs the
+  failure and returns `None`. A refused connection is therefore
+  indistinguishable from an empty file, and a print would be booked at zero
+  instead of recorded as `no_3mf`.
+
+`threemf.py` uses the class for its implicit FTPS handshake, which is the part
+worth having, and drives `connect`, `login` and `retrbinary` itself, streaming
+to disk. It also sets the socket timeout the library leaves unset, which
+otherwise means "block forever" on a silent printer.
+
 ## 2. MQTT state
 
 The printer sends partial updates. The state has to be carried along and

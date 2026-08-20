@@ -1,16 +1,38 @@
-"""Tests for reading slice_info.config.
+"""Tests for reading a 3MF and its slice_info.config.
 
 The fixture is hand written, see tests/fixtures/README.md. The values asserted
 here are derived from it, so replacing the fixture means revisiting this file.
+
+The archives are assembled on the spot rather than committed. A real 3MF is
+several megabytes of somebody else's model, and what parse() reasons about is
+the structure, which a handful of entries reproduces exactly.
 """
 
 from __future__ import annotations
 
+import base64
+import tempfile
 import unittest
+import zipfile
+from pathlib import Path
 
-from bambu_usage.threemf import parse_slice_info
+from bambu_usage.threemf import (
+    MAX_THUMBNAIL_BYTES,
+    THUMBNAIL_MIME,
+    ThreeMFError,
+    parse,
+    parse_slice_info,
+)
 
 from ._support import FIXTURES_DIR
+
+# The smallest valid PNG there is, so the test suite carries no image file. One
+# transparent pixel, 68 bytes.
+ONE_PIXEL_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+)
+
+ANOTHER_PNG = ONE_PIXEL_PNG + b"\x00"
 
 
 class ParseSliceInfoTest(unittest.TestCase):
@@ -92,3 +114,114 @@ class ParseSliceInfoRobustnessTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ParseArchiveTest(unittest.TestCase):
+    """parse() against archives built for the case under test."""
+
+    def setUp(self):
+        self._directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self._directory.cleanup)
+        self.root = Path(self._directory.name)
+        self.slice_info = (FIXTURES_DIR / "slice_info.config").read_bytes()
+
+    def build(self, entries: dict, name: str = "job.3mf") -> Path:
+        path = self.root / name
+        with zipfile.ZipFile(path, "w") as bundle:
+            for entry, payload in entries.items():
+                bundle.writestr(entry, payload)
+        return path
+
+    def test_a_complete_archive(self):
+        archive = self.build(
+            {
+                "Metadata/slice_info.config": self.slice_info,
+                "Metadata/plate_1.png": ONE_PIXEL_PNG,
+            }
+        )
+        metadata = parse(archive)
+
+        self.assertEqual(metadata.plate_id, 1)
+        self.assertEqual(len(metadata.filaments), 2)
+        self.assertEqual(metadata.thumbnail, ONE_PIXEL_PNG)
+        self.assertEqual(metadata.thumbnail_mime, THUMBNAIL_MIME)
+
+    def test_the_plate_named_in_slice_info_wins(self):
+        # A 3MF can carry several plate images. The one the print refers to is
+        # the one slice_info.config names, not the first in the archive.
+        archive = self.build(
+            {
+                "Metadata/slice_info.config": self.slice_info,
+                "Metadata/plate_1.png": ONE_PIXEL_PNG,
+                "Metadata/plate_2.png": ANOTHER_PNG,
+            }
+        )
+        self.assertEqual(parse(archive).thumbnail, ONE_PIXEL_PNG)
+
+    def test_without_slice_info_the_preview_still_arrives(self):
+        # Nothing can be booked, but the print must not lose its picture as
+        # well: it still has to be recognisable in the history.
+        archive = self.build({"Metadata/plate_1.png": ONE_PIXEL_PNG})
+        with self.assertLogs("bambu_usage.threemf", level="WARNING"):
+            metadata = parse(archive)
+
+        self.assertIsNone(metadata.plate_id)
+        self.assertEqual(metadata.filaments, [])
+        self.assertEqual(metadata.thumbnail, ONE_PIXEL_PNG)
+
+    def test_without_a_preview(self):
+        archive = self.build({"Metadata/slice_info.config": self.slice_info})
+        metadata = parse(archive)
+
+        self.assertEqual(len(metadata.filaments), 2)
+        self.assertIsNone(metadata.thumbnail)
+        self.assertIsNone(metadata.thumbnail_mime)
+
+    def test_the_small_preview_is_not_the_preview(self):
+        # A 3MF also carries plate_1_small.png and plate_no_light_1.png. Only
+        # the exact name is the preview.
+        archive = self.build(
+            {
+                "Metadata/plate_1_small.png": ONE_PIXEL_PNG,
+                "Metadata/plate_no_light_1.png": ONE_PIXEL_PNG,
+            }
+        )
+        self.assertIsNone(parse(archive).thumbnail)
+
+    def test_malformed_slice_info_is_tolerated(self):
+        archive = self.build(
+            {
+                "Metadata/slice_info.config": b"<config><plate>",
+                "Metadata/plate_1.png": ONE_PIXEL_PNG,
+            }
+        )
+        with self.assertLogs("bambu_usage.threemf", level="WARNING"):
+            metadata = parse(archive)
+
+        self.assertEqual(metadata.filaments, [])
+        self.assertEqual(metadata.thumbnail, ONE_PIXEL_PNG)
+
+    def test_an_oversized_preview_is_dropped_not_stored(self):
+        # The preview becomes a BLOB in the database, so an implausible one is
+        # skipped rather than kept. The print itself still counts.
+        archive = self.build(
+            {
+                "Metadata/slice_info.config": self.slice_info,
+                "Metadata/plate_1.png": b"\x00" * (MAX_THUMBNAIL_BYTES + 1),
+            }
+        )
+        with self.assertLogs("bambu_usage.threemf", level="WARNING"):
+            metadata = parse(archive)
+
+        self.assertEqual(len(metadata.filaments), 2)
+        self.assertIsNone(metadata.thumbnail)
+
+    def test_a_file_that_is_not_a_zip(self):
+        broken = self.root / "broken.3mf"
+        broken.write_bytes(b"this is not an archive")
+        with self.assertRaises(ThreeMFError):
+            parse(broken)
+
+    def test_a_file_that_is_not_there(self):
+        with self.assertRaises(ThreeMFError):
+            parse(self.root / "absent.3mf")

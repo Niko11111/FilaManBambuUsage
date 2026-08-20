@@ -12,4 +12,4 @@ stay where they are. This plugin only reads that state.
 See docs/01_Design.md in the repository for the full design.
 """
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
