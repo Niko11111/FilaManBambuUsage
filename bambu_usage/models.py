@@ -170,6 +170,11 @@ printer_status_table = Table(
     Column("current_print_id", Integer, nullable=True),
     Column("current_file_name", String(512), nullable=True),
     Column("progress_percent", Integer, nullable=True),
+    # What the printer reports about the running print. Layers are a more honest
+    # measure of progress than the percentage, which counts time.
+    Column("layer_num", Integer, nullable=True),
+    Column("total_layer_num", Integer, nullable=True),
+    Column("remaining_minutes", Integer, nullable=True),
     Column("last_error", String(512), nullable=True),
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )

@@ -47,8 +47,11 @@ from .report import (
     describe_job,
     detect_transition,
     gcode_state_of,
+    layer_of,
     merge_report,
     progress_of,
+    remaining_minutes_of,
+    total_layers_of,
 )
 
 if TYPE_CHECKING:  # imported for annotations only
@@ -428,6 +431,9 @@ class PrinterListener:
                 current_print_id=self.current_print_id,
                 current_file_name=self.current_file_name,
                 progress_percent=progress_of(self.state),
+                layer_num=layer_of(self.state),
+                total_layer_num=total_layers_of(self.state),
+                remaining_minutes=remaining_minutes_of(self.state),
                 last_error=self.last_error,
             )
             await db.commit()

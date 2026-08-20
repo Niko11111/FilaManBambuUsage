@@ -26,8 +26,11 @@ from bambu_usage.report import (
     completed_fraction,
     describe_job,
     detect_transition,
+    layer_of,
     merge_report,
     progress_of,
+    remaining_minutes_of,
+    total_layers_of,
 )
 
 
@@ -209,6 +212,31 @@ class CompletedFractionTest(unittest.TestCase):
 
     def test_numbers_written_as_text(self):
         self.assertEqual(completed_fraction(report(layer_num="1", total_layer_num="4")), 0.25)
+
+
+class LiveFiguresTest(unittest.TestCase):
+    """What the card of a running print shows while it runs."""
+
+    def test_layers(self):
+        state = report(layer_num=58, total_layer_num=73)
+        self.assertEqual(layer_of(state), 58)
+        self.assertEqual(total_layers_of(state), 73)
+
+    def test_layers_written_as_text(self):
+        state = report(layer_num="58", total_layer_num="73")
+        self.assertEqual(layer_of(state), 58)
+        self.assertEqual(total_layers_of(state), 73)
+
+    def test_no_layers_reported(self):
+        self.assertIsNone(layer_of(report(gcode_state=STATE_RUNNING)))
+        self.assertIsNone(total_layers_of(report(gcode_state=STATE_RUNNING)))
+
+    def test_remaining_time(self):
+        self.assertEqual(remaining_minutes_of(report(mc_remaining_time=26)), 26)
+
+    def test_no_remaining_time(self):
+        self.assertIsNone(remaining_minutes_of(report(gcode_state=STATE_RUNNING)))
+        self.assertIsNone(remaining_minutes_of(report(mc_remaining_time="soon")))
 
 
 if __name__ == "__main__":

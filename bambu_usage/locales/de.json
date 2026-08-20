@@ -22,6 +22,10 @@
   },
   "history": {
     "heading": "Drucke",
+    "running": "Läuft gerade",
+    "layer": "Schicht {layer} von {total}",
+    "remaining": "noch {minutes} min, fertig um {end}",
+    "openPrinter": "Drucker in FilaMan öffnen",
     "none": "Noch kein Druck erfasst. Der nächste auf einem überwachten Drucker landet hier.",
     "loadMore": "Mehr anzeigen",
     "filament": "Filament",

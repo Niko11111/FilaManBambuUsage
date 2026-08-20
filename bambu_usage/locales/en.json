@@ -22,6 +22,10 @@
   },
   "history": {
     "heading": "Prints",
+    "running": "Printing now",
+    "layer": "layer {layer} of {total}",
+    "remaining": "{minutes} min left, done at {end}",
+    "openPrinter": "Open the printer in FilaMan",
     "none": "No print recorded yet. The next one on a watched printer lands here.",
     "loadMore": "Show more",
     "filament": "Filament",

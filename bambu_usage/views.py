@@ -107,6 +107,9 @@ async def get_printer_status(db: AsyncSession) -> list[PrinterStatus]:
             current_print_id=row.current_print_id,
             current_file_name=row.current_file_name,
             progress_percent=row.progress_percent,
+            layer_num=row.layer_num,
+            total_layer_num=row.total_layer_num,
+            remaining_minutes=row.remaining_minutes,
             last_error=row.last_error,
             updated_at=row.updated_at,
         )

@@ -40,6 +40,9 @@ class PrinterStatus(BaseModel):
     current_print_id: int | None = None
     current_file_name: str | None = None
     progress_percent: int | None = None
+    layer_num: int | None = None
+    total_layer_num: int | None = None
+    remaining_minutes: int | None = None
     last_error: str | None = None
     # When the listener last wrote this row. A row that stops being refreshed is
     # how a dead tracker becomes visible from the page.

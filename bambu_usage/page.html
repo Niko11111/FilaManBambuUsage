@@ -171,6 +171,23 @@
     .printer-detail { color: var(--text-muted); font-size: 0.88rem; }
     .printer-error { color: var(--error-text); font-size: 0.85rem; width: 100%; }
 
+    /* The running print stands apart, which is the whole point of it. */
+    .running-card { border-color: var(--accent); }
+
+    .bar {
+      height: 6px;
+      border-radius: 999px;
+      background: var(--bg-soft);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      margin: 2px 0 10px;
+    }
+    .bar-fill {
+      height: 100%;
+      background: var(--accent);
+      transition: width var(--transition);
+    }
+
     .print {
       display: grid;
       grid-template-columns: 132px 1fr;
@@ -313,6 +330,11 @@
       <div id="printers"></div>
     </section>
 
+    <section class="fm-card running-card" id="running-card" hidden>
+      <h2 class="fm-card-header" data-i18n="history.running"></h2>
+      <div id="running"></div>
+    </section>
+
     <section class="fm-card">
       <h2 class="fm-card-header" data-i18n="history.heading"></h2>
       <div id="history"></div>
@@ -360,7 +382,10 @@
       var MOUNT = '/bambu-usage';
       var ADMIN = '/api/v1/plugins/bambu-usage';
 
-      var HISTORY_PAGE_SIZE = 20;
+      // Four, because one of them may be the print that is running and moves
+      // into its own card. Three finished ones are what fits without scrolling.
+      var HISTORY_INITIAL = 4;
+      var HISTORY_MORE = 10;
       var STATUS_INTERVAL_MS = 10000;
       var SPOOL_PAGE_SIZE = 200;
       var SPOOL_PAGE_LIMIT = 10;
@@ -387,6 +412,8 @@
       var settingsRows = new Map();
       var historyOffset = 0;
       var currency = '';
+      var runningIds = new Set();
+      var booted = false;
 
       /* ── translation ─────────────────────────────────────────── */
 
@@ -537,6 +564,21 @@
         }).then(function (rows) {
           printers = rows || [];
           renderPrinters();
+
+          var next = new Set();
+          printers.forEach(function (printer) {
+            if (printer.current_print_id) next.add(printer.current_print_id);
+          });
+
+          var changed = next.size !== runningIds.size
+            || Array.from(next).some(function (id) { return !runningIds.has(id); });
+          runningIds = next;
+          updateRunningLive();
+
+          // A print that started or ended moves between the two cards, and only
+          // a fresh history knows which one it belongs in now.
+          if (changed && booted) return loadHistory(true);
+          return null;
         });
       }
 
@@ -670,25 +712,86 @@
 
       function loadHistory(reset) {
         if (reset) historyOffset = 0;
-        var query = MOUNT + '/history?limit=' + HISTORY_PAGE_SIZE + '&offset=' + historyOffset;
+        var size = reset ? HISTORY_INITIAL : HISTORY_MORE;
+        var query = MOUNT + '/history?limit=' + size + '&offset=' + historyOffset;
 
         return read(query).then(function (records) {
           var target = document.getElementById('history');
-          if (reset) target.textContent = '';
-
-          if (!records.length && !historyOffset) {
-            target.appendChild(el('p', 'empty', t('history.none')));
+          var running = document.getElementById('running');
+          if (reset) {
+            target.textContent = '';
+            running.textContent = '';
           }
+
+          var finished = 0;
           records.forEach(function (record) {
-            target.appendChild(renderPrint(record));
+            if (runningIds.has(record.id)) {
+              running.appendChild(renderPrint(record, true));
+            } else {
+              target.appendChild(renderPrint(record, false));
+              finished += 1;
+            }
           });
 
+          document.getElementById('running-card').hidden = !running.firstChild;
+          if (reset && !finished) {
+            target.appendChild(el('p', 'empty', t('history.none')));
+          }
+
           historyOffset += records.length;
-          document.getElementById('load-more').hidden = records.length < HISTORY_PAGE_SIZE;
+          document.getElementById('load-more').hidden = records.length < size;
+          updateRunningLive();
         });
       }
 
-      function renderPrint(record) {
+      function updateRunningLive() {
+        // Redrawn on every poll, so the bar follows the printer without the
+        // history being fetched again.
+        var host = document.getElementById('running-live');
+        if (!host) return;
+
+        var printer = printers.find(function (entry) { return entry.current_print_id; });
+        host.textContent = '';
+        if (!printer) return;
+
+        var percent = printer.progress_percent === null || printer.progress_percent === undefined
+          ? 0 : printer.progress_percent;
+
+        var bar = el('div', 'bar');
+        var fill = el('div', 'bar-fill');
+        fill.style.width = percent + '%';
+        bar.appendChild(fill);
+        host.appendChild(bar);
+
+        var line = el('div', 'print-meta');
+        line.appendChild(el('span', null, percent + '%'));
+
+        if (printer.layer_num && printer.total_layer_num) {
+          line.appendChild(el('span', null, t('history.layer', {
+            layer: printer.layer_num,
+            total: printer.total_layer_num
+          })));
+        }
+        if (printer.remaining_minutes) {
+          line.appendChild(el('span', null, t('history.remaining', {
+            minutes: printer.remaining_minutes,
+            end: endOfPrint(printer.remaining_minutes)
+          })));
+        }
+
+        var link = el('a', null, t('history.openPrinter'));
+        link.href = '/printers/' + printer.printer_id;
+        line.appendChild(link);
+
+        host.appendChild(line);
+      }
+
+      function endOfPrint(minutes) {
+        var done = new Date(Date.now() + minutes * 60000);
+        return done.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+
+      function renderPrint(record, isRunning) {
         var wrapper = el('div', 'print');
 
         if (record.has_thumbnail) {
@@ -737,6 +840,14 @@
         }
 
         body.appendChild(meta);
+
+        if (isRunning) {
+          // Filled by updateRunningLive on every poll, so the live figures do
+          // not depend on the history being reloaded.
+          var live = el('div');
+          live.id = 'running-live';
+          body.appendChild(live);
+        }
 
         var scroll = el('div', 'filament-scroll');
         scroll.appendChild(filamentTable(record));
@@ -1013,6 +1124,7 @@
         .then(loadSpools)
         .then(loadSettings)
         .then(function () { return loadHistory(true); })
+        .then(function () { booted = true; })
         .catch(complain);
 
       setInterval(function () {

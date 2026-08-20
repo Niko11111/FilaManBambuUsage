@@ -191,6 +191,27 @@ def completed_fraction(state: dict) -> float | None:
     return None
 
 
+def layer_of(state: dict) -> int | None:
+    """Which layer the printer is on, or None when it does not say."""
+    return _as_int(state.get(PRINT_SECTION, {}).get("layer_num"))
+
+
+def total_layers_of(state: dict) -> int | None:
+    """How many layers the print has in total, or None when it does not say."""
+    return _as_int(state.get(PRINT_SECTION, {}).get("total_layer_num"))
+
+
+def remaining_minutes_of(state: dict) -> int | None:
+    """How much longer the printer thinks it needs, in minutes.
+
+    The field is ``mc_remaining_time``, the one bambulabs_api reads for the same
+    purpose. Bambu reports it in minutes, which is what its own display shows.
+    A four digit number next to a print of half an hour would mean seconds, and
+    this is the single place that would have to be corrected.
+    """
+    return _as_int(state.get(PRINT_SECTION, {}).get("mc_remaining_time"))
+
+
 def _as_int(value: Any) -> int | None:
     """Read a number a printer reported, tolerating text and nonsense."""
     try:

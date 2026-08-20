@@ -357,6 +357,9 @@ async def upsert_printer_status(
     current_print_id: int | None = None,
     current_file_name: str | None = None,
     progress_percent: int | None = None,
+    layer_num: int | None = None,
+    total_layer_num: int | None = None,
+    remaining_minutes: int | None = None,
     last_error: str | None = None,
 ) -> None:
     """Write the live state of one listener.
@@ -372,6 +375,9 @@ async def upsert_printer_status(
         "current_print_id": current_print_id,
         "current_file_name": current_file_name,
         "progress_percent": progress_percent,
+        "layer_num": layer_num,
+        "total_layer_num": total_layer_num,
+        "remaining_minutes": remaining_minutes,
         "last_error": last_error,
         "updated_at": updated_at,
     }
