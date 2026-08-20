@@ -67,7 +67,9 @@
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
 
-    .page-content { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
+    /* Wide enough to stop wasting a large screen, capped so a line of text
+       stays a readable length. */
+    .page-content { max-width: min(1400px, 100%); margin: 0 auto; padding: 32px 24px 64px; }
 
     /* FilaMan serves this page outside its own shell, so the navigation drawer
        is not there. Until FilaMan can embed a plugin page, this is the way
@@ -192,9 +194,17 @@
       display: grid;
       grid-template-columns: 132px 1fr;
       gap: 18px;
-      padding: 20px 0;
+      padding: 20px 0 20px 14px;
       border-top: 1px solid var(--border);
+      /* The strip answers one question: does this print still want something
+         from me. The badge next to the status says the same in words, because
+         a colour alone is not an answer for everyone. */
+      border-left: 3px solid transparent;
     }
+    .print.state-running { border-left-color: var(--accent); }
+    .print.state-booked { border-left-color: var(--success-text); }
+    .print.state-open { border-left-color: var(--accent-3); }
+    .print.state-failed { border-left-color: var(--error-text); }
     .print:first-child { border-top: none; }
     .print-preview {
       width: 132px; height: 132px;
@@ -636,6 +646,16 @@
         return node;
       }
 
+      function link(text, href) {
+        // A link only where there is something to open, plain text otherwise,
+        // so nothing looks clickable that is not.
+        if (!href) return document.createTextNode(text);
+
+        var anchor = el('a', null, text);
+        anchor.href = href;
+        return anchor;
+      }
+
       function grams(value) {
         return value === null || value === undefined ? '-' : value.toFixed(1) + ' g';
       }
@@ -753,6 +773,7 @@
             var colors = filament.colors || [];
             spools.set(spool.id, {
               label: spoolLabel(spool),
+              filamentId: filament.id,
               material: filament.material_type || '',
               color: normalizeColor(colors.length && colors[0].color ? colors[0].color.hex_code : ''),
               maker: filament.manufacturer ? filament.manufacturer.name : '',
@@ -907,6 +928,7 @@
 
       function renderPrint(record, isRunning) {
         var wrapper = el('div', 'print');
+        wrapper.classList.add('state-' + printState(record, isRunning));
 
         if (record.has_thumbnail) {
           var preview = el('img', 'print-preview');
@@ -951,6 +973,13 @@
           })));
         }
 
+        if (record.spent) {
+          var done = el('span', 'badge good', t('history.stateBooked'));
+          meta.appendChild(done);
+        } else if (unassigned(record)) {
+          meta.appendChild(el('span', 'badge open', t('history.openWork')));
+        }
+
         if (!record.spent && bookable(record)) {
           var book = el('button', 'button ghost', t('history.book'));
           book.type = 'button';
@@ -985,6 +1014,22 @@
         return wrapper;
       }
 
+      function printState(record, isRunning) {
+        // Not the outcome of the print, which the status badge already says,
+        // but whether it is waiting for a human.
+        if (isRunning) return 'running';
+        if (record.error) return 'failed';
+        if (unassigned(record) || bookable(record)) return 'open';
+        if (record.spent) return 'booked';
+        return 'none';
+      }
+
+      function unassigned(record) {
+        return record.filaments.some(function (usage) {
+          return usage.spool_id === null || usage.spool_id === undefined;
+        });
+      }
+
       function bookable(record) {
         return record.filaments.some(function (usage) {
           return usage.spool_id !== null && usage.spool_id !== undefined && !usage.spent_at;
@@ -1012,13 +1057,19 @@
         var assigned = usage.spool_id !== null && usage.spool_id !== undefined;
         var row = el('tr', assigned ? null : 'needs-spool');
 
+        var spool = assigned ? spools.get(usage.spool_id) : null;
+
         var first = el('td');
         if (usage.color_hex) {
           var swatch = el('span', 'swatch');
           swatch.style.background = usage.color_hex;
           first.appendChild(swatch);
         }
-        first.appendChild(document.createTextNode(usage.material || ''));
+        // The material is what the slicer asked for; the link goes to the
+        // filament of the spool that answered for it, which is the thing in
+        // FilaMan somebody would want to open.
+        first.appendChild(link(usage.material || '', spool && spool.filamentId
+          ? '/filaments/' + spool.filamentId : null));
         row.appendChild(first);
 
         var slot = el('td');
@@ -1031,7 +1082,10 @@
           })));
         }
         row.appendChild(slot);
-        row.appendChild(el('td', null, spoolName(usage.spool_id)));
+        var spoolCell = el('td');
+        spoolCell.appendChild(link(spoolName(usage.spool_id),
+          assigned ? '/spools/' + usage.spool_id : null));
+        row.appendChild(spoolCell);
         row.appendChild(el('td', null, grams(usage.estimated_grams)));
 
         var booked = el('td', null, usage.spent_at ? grams(usage.spent_grams) : t('history.notBooked'));

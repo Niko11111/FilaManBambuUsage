@@ -45,6 +45,8 @@
     "corrected": "von Hand korrigiert",
     "stoppedAt": "bei {percent}% abgebrochen",
     "notBooked": "nicht gebucht",
+    "stateBooked": "gebucht",
+    "openWork": "Zuordnung offen",
     "bookingFailed": "Buchung fehlgeschlagen"
   },
   "picker": {

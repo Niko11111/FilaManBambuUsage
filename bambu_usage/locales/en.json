@@ -45,6 +45,8 @@
     "corrected": "corrected by hand",
     "stoppedAt": "stopped at {percent}%",
     "notBooked": "not booked",
+    "stateBooked": "booked",
+    "openWork": "needs a spool",
     "bookingFailed": "Booking failed"
   },
   "picker": {
