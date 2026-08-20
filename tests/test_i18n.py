@@ -126,6 +126,14 @@ class UsageTest(unittest.TestCase):
         # Dead keys are dead code, and translators pay for them.
         self.assertEqual(self.reference - (self.used | self.codes), set())
 
+    def test_every_marked_attribute_is_actually_translated(self):
+        # A key can be spelled right, exist in every language and still never
+        # reach the page, because translatePage only looks at the attributes it
+        # knows. That is how the search box shipped without a placeholder.
+        marked = set(re.findall(r"data-i18n(-[a-z]+)?=", self.html))
+        handled = set(re.findall(r"querySelectorAll\('\[data-i18n(-[a-z]+)?\]'\)", self.html))
+        self.assertEqual(marked - handled, set())
+
     def test_the_page_carries_no_hardcoded_sentences(self):
         # A data-i18n element must not also hold literal prose, or the two
         # disagree the moment a translation changes. If the dictionary fails to

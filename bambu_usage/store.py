@@ -23,7 +23,7 @@ import logging
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import delete, insert, or_, select, update
 
 from .models import (
     OPEN_STATUSES,
@@ -208,6 +208,7 @@ async def list_prints(
     offset: int = 0,
     *,
     search: str | None = None,
+    printer_id: int | None = None,
     hide_failed: bool = False,
     order: str = "newest",
 ) -> list[Any]:
@@ -220,18 +221,53 @@ async def list_prints(
     statement = select(*columns)
 
     if search:
-        # Escaped, because a file name may legitimately hold a percent sign and
-        # would otherwise match everything from there on.
-        needle = search.strip()[:MAX_SEARCH_LENGTH]
-        needle = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        statement = statement.where(
-            prints_table.c.file_name.ilike(f"%{needle}%", escape="\\")
-        )
+        statement = statement.where(_matching(search))
+
+    if printer_id is not None:
+        statement = statement.where(prints_table.c.printer_id == printer_id)
 
     if hide_failed:
         statement = statement.where(prints_table.c.status.notin_(sorted(STOPPED_STATUSES)))
 
     return list((await db.execute(_ordered(statement, order).limit(limit).offset(offset))).all())
+
+
+def _matching(search: str) -> Any:
+    """What one search term may match: the file name, a material, a spool.
+
+    Three questions somebody types into one field. "cube" is a file, "petg" is
+    a material, "25" is the spool it was booked against, and none of them needs
+    a syntax to tell them apart.
+
+    The spool half only applies to a term that is a number, because otherwise
+    every file name holding a digit would drag in a spool as well.
+    """
+    needle = search.strip()[:MAX_SEARCH_LENGTH]
+    # Escaped, because a file name may legitimately hold a percent sign, and an
+    # underscore means "any character" to LIKE. Both are common in file names.
+    escaped = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = f"%{escaped}%"
+
+    matches = [
+        prints_table.c.file_name.ilike(pattern, escape="\\"),
+        prints_table.c.id.in_(
+            select(filament_table.c.print_id).where(
+                filament_table.c.material.ilike(pattern, escape="\\")
+            )
+        ),
+    ]
+
+    number = needle.lstrip("#").strip()
+    if number.isdigit():
+        matches.append(
+            prints_table.c.id.in_(
+                select(filament_table.c.print_id).where(
+                    filament_table.c.spool_id == int(number)
+                )
+            )
+        )
+
+    return or_(*matches)
 
 
 def _ordered(statement: Any, order: str) -> Any:

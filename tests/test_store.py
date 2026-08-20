@@ -68,6 +68,10 @@ class StoreTest(unittest.IsolatedAsyncioTestCase):
         )
         await db.commit()
 
+    async def with_filaments(self, db, print_id, rows):
+        await store.add_filament_rows(db, print_id, rows)
+        await db.commit()
+
     async def test_the_search_matches_a_part_of_the_file_name(self):
         async with self.sessions() as db:
             await self.three_prints(db)
@@ -90,6 +94,57 @@ class StoreTest(unittest.IsolatedAsyncioTestCase):
             found = await store.list_prints(db, search="cube_")
 
         self.assertEqual([row.file_name for row in found], ["cube_v2.3mf"])
+
+    async def test_the_search_finds_a_material(self):
+        # One field, three questions. "petg" is not a file name, and nobody
+        # should have to learn a syntax to say which one they meant.
+        async with self.sessions() as db:
+            await self.three_prints(db)
+            balcony = (await store.list_prints(db, search="Balcony"))[0]
+            await self.with_filaments(db, balcony.id, [
+                store.FilamentRow(filament_id=1, material="PETG", spool_id=25),
+            ])
+
+            found = await store.list_prints(db, search="petg")
+
+        self.assertEqual([row.file_name for row in found], ["Balcony_stopper.3mf"])
+
+    async def test_the_search_finds_a_spool_number(self):
+        async with self.sessions() as db:
+            await self.three_prints(db)
+            balcony = (await store.list_prints(db, search="Balcony"))[0]
+            await self.with_filaments(db, balcony.id, [
+                store.FilamentRow(filament_id=1, material="PETG", spool_id=25),
+            ])
+
+            by_number = await store.list_prints(db, search="25")
+            with_hash = await store.list_prints(db, search="#25")
+
+        self.assertEqual([row.file_name for row in by_number], ["Balcony_stopper.3mf"])
+        self.assertEqual([row.file_name for row in with_hash], ["Balcony_stopper.3mf"])
+
+    async def test_a_number_nobody_used_finds_nothing(self):
+        async with self.sessions() as db:
+            await self.three_prints(db)
+            found = await store.list_prints(db, search="999")
+
+        self.assertEqual(found, [])
+
+    async def test_the_printer_filter_narrows_the_list(self):
+        async with self.sessions() as db:
+            await self.three_prints(db)
+            await self.make_print(
+                db, printer_id=2, file_name="cube.3mf", subtask_id="d", started_at=NOW,
+            )
+            await db.commit()
+
+            second = await store.list_prints(db, printer_id=2)
+            both = await store.list_prints(db, search="cube")
+            narrowed = await store.list_prints(db, search="cube", printer_id=2)
+
+        self.assertEqual([row.printer_id for row in second], [2])
+        self.assertEqual(len(both), 3)
+        self.assertEqual(len(narrowed), 1)
 
     async def test_hiding_failed_leaves_the_stopped_ones_out(self):
         async with self.sessions() as db:

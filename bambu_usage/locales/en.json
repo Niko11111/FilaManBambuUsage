@@ -56,7 +56,7 @@
     "objects": "{count} objects",
     "nozzle": "{mm} mm nozzle",
     "estimate": "{duration} estimated",
-    "search": "Search by file name",
+    "search": "Search file, material, spool",
     "hideFailed": "hide failed",
     "orderNewest": "Newest first",
     "orderOldest": "Oldest first",
@@ -66,7 +66,8 @@
     "deleteHeading": "Delete this print?",
     "deleteExplain": "Only the entry in this list goes. What was booked stays booked on the spool, because the filament was really used.",
     "deleteConfirm": "Delete",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "allPrinters": "All printers"
   },
   "printType": {
     "cloud": "cloud print",

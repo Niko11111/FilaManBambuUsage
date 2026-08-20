@@ -599,6 +599,7 @@
           <input type="checkbox" id="history-hide-failed" />
           <span data-i18n="history.hideFailed"></span>
         </label>
+        <select id="history-printer"></select>
         <select id="history-order">
           <option value="newest" data-i18n="history.orderNewest"></option>
           <option value="oldest" data-i18n="history.orderOldest"></option>
@@ -729,7 +730,7 @@
       var historyOffset = 0;
       // What the list is filtered by right now. On the server, so that the
       // pages behind the button are filtered as well.
-      var historyFilter = { search: '', hideFailed: false, order: 'newest' };
+      var historyFilter = { search: '', printerId: '', hideFailed: false, order: 'newest' };
       var searchTimer = null;
       var currency = '';
       var runningIds = new Set();
@@ -758,6 +759,9 @@
         });
         document.querySelectorAll('[data-i18n-title]').forEach(function (element) {
           element.title = t(element.getAttribute('data-i18n-title'));
+        });
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(function (element) {
+          element.placeholder = t(element.getAttribute('data-i18n-placeholder'));
         });
       }
 
@@ -943,6 +947,8 @@
           return;
         }
 
+        fillPrinterFilter();
+
         printers.forEach(function (printer) {
           var row = el('div', 'printer');
           row.appendChild(el('span', 'printer-name', printer.printer_name));
@@ -981,6 +987,32 @@
 
           target.appendChild(row);
         });
+      }
+
+      function fillPrinterFilter() {
+        // Refilled on every poll, because a printer can appear or disappear in
+        // FilaMan while the page is open. The choice survives that.
+        var select = document.getElementById('history-printer');
+        var chosen = select.value;
+        select.textContent = '';
+
+        var all = el('option', null, t('history.allPrinters'));
+        all.value = '';
+        select.appendChild(all);
+
+        printers.forEach(function (printer) {
+          var option = el('option', null, printer.printer_name || ('#' + printer.printer_id));
+          option.value = String(printer.printer_id);
+          select.appendChild(option);
+        });
+
+        select.value = chosen;
+        if (select.value !== chosen) {
+          // The printer it was filtered by is gone. Show everything again
+          // rather than an empty list nobody can explain.
+          historyFilter.printerId = '';
+          loadHistory(true).catch(complain);
+        }
       }
 
       function printerName(printerId) {
@@ -1121,6 +1153,9 @@
         var parts = ['&order=' + encodeURIComponent(historyFilter.order)];
         if (historyFilter.search) {
           parts.push('&search=' + encodeURIComponent(historyFilter.search));
+        }
+        if (historyFilter.printerId) {
+          parts.push('&printer_id=' + encodeURIComponent(historyFilter.printerId));
         }
         if (historyFilter.hideFailed) parts.push('&hide_failed=true');
         return parts.join('');
@@ -1876,6 +1911,11 @@
 
       document.getElementById('history-hide-failed').addEventListener('change', function () {
         historyFilter.hideFailed = this.checked;
+        loadHistory(true).catch(complain);
+      });
+
+      document.getElementById('history-printer').addEventListener('change', function () {
+        historyFilter.printerId = this.value;
         loadHistory(true).catch(complain);
       });
 

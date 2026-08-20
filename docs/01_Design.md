@@ -338,8 +338,17 @@ rather than through `confirm()`, because a browser dialog cannot be translated.
 spool refill itself through tidying up would make the history the enemy of the
 stock. The dialog says so rather than leaving it to be discovered.
 
-Above the list sits a search by file name, a switch that leaves the failed ones
-out, and a sort order. All three are answered by the query in `store.list_prints`
+Above the list sits a search, a printer, a switch that leaves the failed ones
+out, and a sort order. The search covers three things at once, because they are
+three answers to one question and nobody should need a syntax to tell them
+apart: the file name, a material, and a spool number (`25` or `#25`, and only
+where the term really is a number). The spool **name** is deliberately not
+searchable: it lives in FilaMan's tables, which `store.py` may not read, and
+matching it on the page would only search the records already loaded.
+
+The printer is a dropdown rather than a search term for the same reason. We
+store `printer_id`, the name comes from FilaMan, and the page has the list
+already. All three are answered by the query in `store.list_prints`
 rather than by the page, because a filter that only searches the four records
 already loaded is not a filter. The sort order is an allow list and the search
 term is escaped, so neither can become a way to read something else.

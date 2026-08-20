@@ -310,6 +310,7 @@ async def history(
     limit: int = Query(default=50, ge=1, le=MAX_HISTORY_LIMIT),
     offset: int = Query(default=0, ge=0),
     search: str | None = Query(default=None, max_length=store.MAX_SEARCH_LENGTH),
+    printer_id: int | None = Query(default=None, ge=0),
     hide_failed: bool = Query(default=False),
     # A Literal rather than a string: FastAPI then refuses anything else before
     # it reaches the query, which is what keeps a sort order from becoming a way
@@ -319,7 +320,13 @@ async def history(
     """Prints, newest first, with their filament breakdown."""
     try:
         return await views.get_history(
-            db, limit=limit, offset=offset, search=search, hide_failed=hide_failed, order=order
+            db,
+            limit=limit,
+            offset=offset,
+            search=search,
+            printer_id=printer_id,
+            hide_failed=hide_failed,
+            order=order,
         )
     except SQLAlchemyError as exc:
         raise _database_unavailable(exc) from exc

@@ -32,6 +32,7 @@ async def get_history(
     offset: int = 0,
     *,
     search: str | None = None,
+    printer_id: int | None = None,
     hide_failed: bool = False,
     order: str = "newest",
 ) -> list[PrintRecord]:
@@ -46,7 +47,13 @@ async def get_history(
     from .schemas import FilamentUsage, PrintRecord
 
     prints = await store.list_prints(
-        db, limit=limit, offset=offset, search=search, hide_failed=hide_failed, order=order
+        db,
+        limit=limit,
+        offset=offset,
+        search=search,
+        printer_id=printer_id,
+        hide_failed=hide_failed,
+        order=order,
     )
     rows = await store.list_filaments_for(db, [int(entry.id) for entry in prints])
 
