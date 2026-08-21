@@ -213,6 +213,45 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(rows[0].spool_id)
 
+    async def test_the_row_records_where_its_spool_came_from(self):
+        # Three ways lead to a spool, and afterwards nobody can tell which it
+        # was. The tag is the one that surprises: a spool turns up that nobody
+        # assigned.
+        self.slots = {"0-0": 7}
+        self.tags = {"TAG": 25}
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1], tray_tags={"0-1": "TAG"})
+            rows = await store.list_filaments(db, print_id)
+
+        self.assertEqual(
+            [(row.spool_id, row.spool_source) for row in rows],
+            [(7, models.SPOOL_FROM_FILAMAN), (25, models.SPOOL_FROM_TAG)],
+        )
+
+    async def test_a_row_nobody_could_resolve_records_no_source(self):
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0])
+            rows = await store.list_filaments(db, print_id)
+
+        self.assertIsNone(rows[0].spool_id)
+        self.assertIsNone(rows[0].spool_source)
+
+    async def test_assigning_by_hand_says_so_without_touching_the_amount(self):
+        # These used to be one flag, and the card then claimed "corrected by
+        # hand" about a row where only the spool had been picked.
+        self.have_spools(9)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            row = (await store.list_filaments(db, print_id))[0]
+            await service.assign_spool(db, row.id, 9, spend_now=False)
+
+            assigned = await store.get_filament(db, row.id)
+
+        self.assertEqual(assigned.spool_source, models.SPOOL_FROM_HAND)
+        self.assertFalse(assigned.manual_override)
+
     async def test_the_same_message_twice_creates_one_print(self):
         async with self.sessions() as db:
             first = await self.start(db, [0, 1])
@@ -539,6 +578,40 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.consumptions, [(8, 12.5, "cube.3mf")])
             # The print stays open, because one row is still waiting.
             self.assertFalse((await store.get_print(db, print_id)).spent)
+
+    async def test_a_print_somebody_stopped_is_not_called_broken(self):
+        # The printer leaves a code behind after a fault and none after a stop.
+        # Without this every cancelled print looked like a defective machine.
+        self.slots = {"0-0": 7}
+        self.have_spools(7)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0])
+            await service.finish_print(
+                db, print_id, models.STATUS_CANCELLED, AUTO_WITH_CANCEL, NOW,
+                completed_fraction=0.5, stopped_at_layer=2, printer_error_code=None,
+            )
+            record = await store.get_print(db, print_id)
+
+        self.assertEqual(record.status, models.STATUS_CANCELLED)
+        self.assertIsNone(record.printer_error_code)
+
+    async def test_a_fault_keeps_its_code(self):
+        # Stored because the rule that reads it is an assumption: the first real
+        # fault shows whether it stands the right way round.
+        self.slots = {"0-0": 7}
+        self.have_spools(7)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0])
+            await service.finish_print(
+                db, print_id, models.STATUS_FAILED, AUTO_WITH_CANCEL, NOW,
+                completed_fraction=0.5, stopped_at_layer=2, printer_error_code=50348044,
+            )
+            record = await store.get_print(db, print_id)
+
+        self.assertEqual(record.status, models.STATUS_FAILED)
+        self.assertEqual(record.printer_error_code, 50348044)
 
     async def test_a_running_print_is_not_booked(self):
         # It has laid down some share nobody knows the end of yet. Booking it

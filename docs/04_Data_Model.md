@@ -179,6 +179,7 @@ One print job.
 | `layer_shares` | text, nullable | JSON, per filament the share of its material each layer has used. The shape of the curve out of the plate gcode, never an amount, see `03_Bambu_Data_Sources.md` |
 | `stopped_at_layer` | int, nullable | which layer the printer was on when it stopped, so the curve can be read at the right place long afterwards |
 | `spent` | bool | whether it has already been deducted |
+| `printer_error_code` | int, nullable | what the printer reported when the print ended. Absent or zero means nobody's machine broke, which is what tells cancelled from failed |
 | `estimated_seconds` | int, nullable | what the slicer predicted for the plate, `prediction` in slice_info.config |
 | `object_count` | int, nullable | how many objects sit on the plate |
 | `nozzle_diameter` | float, nullable | the nozzle it was sliced for. A dual nozzle machine reports two, the first is kept |

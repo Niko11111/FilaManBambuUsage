@@ -162,15 +162,16 @@ async def _build_filament_rows(
 
     for filament in metadata.filaments:
         slot_index = slots.get(filament.filament_id)
-        spool_id = None
+        spool_id, spool_source = None, None
         if slot_index is not None:
-            spool_id = await _resolve_spool(db, printer_id, slot_index, tray_tags)
+            spool_id, spool_source = await _resolve_spool(db, printer_id, slot_index, tray_tags)
 
         rows.append(
             store.FilamentRow(
                 filament_id=filament.filament_id,
                 slot_index=slot_index,
                 spool_id=spool_id,
+                spool_source=spool_source,
                 material=filament.material,
                 color_hex=filament.color_hex,
                 tray_info_idx=filament.tray_info_idx,
@@ -187,8 +188,8 @@ async def _resolve_spool(
     printer_id: int,
     slot_index: str,
     tray_tags: dict[str, str],
-) -> int | None:
-    """Which spool sits in *slot_index*, asked twice in a deliberate order.
+) -> tuple[int | None, str | None]:
+    """Which spool sits in *slot_index*, and how we know, asked in this order.
 
     **FilaMan's own assignment wins.** A person or the driver put it there, and
     a tag read off a printer does not overrule that.
@@ -199,25 +200,38 @@ async def _resolve_spool(
     would arrive with nothing assigned. We read the tag for our own booking and
     write nothing back, see docs/01_Design.md section 6.
 
-    None where neither answers, which is normal: the row stays open for somebody
-    to assign by hand rather than being guessed at.
+    Both None where neither answers, which is normal: the row stays open for
+    somebody to assign by hand rather than being guessed at.
+
+    The second value says which of the two answered, so the card can explain a
+    spool that turned up without anybody assigning it.
     """
     from . import filaman
+    from .models import SPOOL_FROM_FILAMAN, SPOOL_FROM_TAG
 
     assigned = await filaman.resolve_spool_for_slot(db, printer_id, slot_index)
     if assigned is not None:
-        return assigned
+        return assigned, SPOOL_FROM_FILAMAN
 
     tag = tray_tags.get(slot_index)
     if not tag:
-        return None
+        return None, None
 
     found = await filaman.find_spool_by_rfid(db, tag)
-    if found is not None:
+    if found is None:
+        # Said out loud, because otherwise a slot that resolves to nothing looks
+        # the same whether the printer reported no tag or the tag belongs to no
+        # spool, and those want different answers from a human.
         logger.info(
-            "printer %s: slot %s resolved to spool %s by its tag", printer_id, slot_index, found
+            "printer %s: slot %s reports tag %s, which no spool carries",
+            printer_id, slot_index, tag,
         )
-    return found
+        return None, None
+
+    logger.info(
+        "printer %s: slot %s resolved to spool %s by its tag", printer_id, slot_index, found
+    )
+    return found, SPOOL_FROM_TAG
 
 
 async def finish_print(
@@ -228,6 +242,7 @@ async def finish_print(
     finished_at: datetime | None = None,
     completed_fraction: float | None = None,
     stopped_at_layer: int | None = None,
+    printer_error_code: int | None = None,
 ) -> None:
     """Close a print and book it if the settings allow.
 
@@ -262,6 +277,7 @@ async def finish_print(
         finished_at=moment,
         completed_fraction=completed_fraction,
         stopped_at_layer=stopped_at_layer,
+        printer_error_code=printer_error_code,
     )
     await db.commit()
 

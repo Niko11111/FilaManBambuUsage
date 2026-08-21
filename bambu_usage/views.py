@@ -84,6 +84,7 @@ async def get_history(
                 spent_grams=row.spent_grams,
                 spent_at=row.spent_at,
                 manual_override=bool(row.manual_override),
+                spool_source=row.spool_source,
                 used_so_far=_used_so_far(row, curves, layer),
                 from_fraction=row.from_fraction,
                 to_fraction=row.to_fraction,
@@ -101,6 +102,7 @@ async def get_history(
                 status=entry.status,
                 spent=bool(entry.spent),
                 completed_fraction=entry.completed_fraction,
+                printer_error_code=entry.printer_error_code,
                 layer_count=_layer_count(entry.layer_shares),
                 estimated_seconds=entry.estimated_seconds,
                 object_count=entry.object_count,
@@ -178,6 +180,7 @@ async def get_printer_status(db: AsyncSession) -> list[PrinterStatus]:
             layer_num=row.layer_num,
             total_layer_num=row.total_layer_num,
             remaining_minutes=row.remaining_minutes,
+            active_slot_index=row.active_slot_index,
             last_error=row.last_error,
             updated_at=row.updated_at,
         )

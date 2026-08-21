@@ -27,6 +27,7 @@ from sqlalchemy import delete, insert, or_, select, update
 
 from .models import (
     OPEN_STATUSES,
+    SPOOL_FROM_HAND,
     STOPPED_STATUSES,
     filament_table,
     printer_status_table,
@@ -56,6 +57,7 @@ class FilamentRow:
     tray_info_idx: str | None = None
     estimated_grams: float | None = None
     estimated_length_m: float | None = None
+    spool_source: str | None = None
     from_fraction: float | None = None
     to_fraction: float | None = None
 
@@ -345,6 +347,7 @@ async def set_print_status(
     error: str | None = None,
     completed_fraction: float | None = None,
     stopped_at_layer: int | None = None,
+    printer_error_code: int | None = None,
 ) -> None:
     """Move a print to *status*, optionally recording when and why it ended.
 
@@ -361,6 +364,8 @@ async def set_print_status(
         values["completed_fraction"] = completed_fraction
     if stopped_at_layer is not None:
         values["stopped_at_layer"] = stopped_at_layer
+    if printer_error_code is not None:
+        values["printer_error_code"] = printer_error_code
 
     await db.execute(update(prints_table).where(prints_table.c.id == print_id).values(**values))
 
@@ -392,13 +397,18 @@ async def set_filament_spool(
 ) -> None:
     """Attach a spool to one row after the fact.
 
-    *manual* marks it as done by hand, which is what the interface does. The
-    listener passes False when it merely picks up an assignment that reached
+    *manual* records that a person chose it, which is what the interface does.
+    The listener passes False when it merely picks up an assignment that reached
     FilaMan a moment after the print had already started.
+
+    This used to set ``manual_override``, which meant the card said "corrected by
+    hand" about a row where only the spool had been picked and the amount was
+    whatever the booking worked out. Two different facts under one flag: one is
+    where the spool came from, the other is whether somebody overruled the grams.
     """
     values: dict[str, Any] = {"spool_id": spool_id}
     if manual:
-        values["manual_override"] = True
+        values["spool_source"] = SPOOL_FROM_HAND
 
     await db.execute(
         update(filament_table).where(filament_table.c.id == filament_row_id).values(**values)
@@ -510,6 +520,7 @@ async def upsert_printer_status(
     layer_num: int | None = None,
     total_layer_num: int | None = None,
     remaining_minutes: int | None = None,
+    active_slot_index: str | None = None,
     last_error: str | None = None,
 ) -> None:
     """Write the live state of one listener.
@@ -528,6 +539,7 @@ async def upsert_printer_status(
         "layer_num": layer_num,
         "total_layer_num": total_layer_num,
         "remaining_minutes": remaining_minutes,
+        "active_slot_index": active_slot_index,
         "last_error": last_error,
         "updated_at": updated_at,
     }

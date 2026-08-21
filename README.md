@@ -39,31 +39,52 @@ is already set up in FilaMan.
 
 ## Status
 
-**Version 0.8.1. It works, and it has booked a real print.**
+**Version 0.8.2. It works, and it has booked a real print.**
 
-Verified end to end on hardware: the print was detected, the 3MF fetched over
-FTPS, slicer filament 4 resolved to AMS slot 1-3 and from there to spool 25,
-34.09 g booked, the spool went from 525.01 g to 490.92 g, and the movement shows
-up in FilaMan's spool log with `source = bambu_usage`.
+### Proven on hardware
+
+- **A full print, booked.** Detected, 3MF fetched over FTPS, slicer filament 4
+  resolved to AMS slot 1-3 and from there to spool 25, 34.09 g booked, the spool
+  went from 525.01 g to 490.92 g, and the movement appears in FilaMan's spool
+  log with `source = bambu_usage`.
+- **Resolving a spool by the RFID tag of its tray**, 21 August 2026. A two
+  colour print: the row whose spool carried its Bambu uuid resolved by itself,
+  with nobody assigning anything, and the row next to it, whose spool carried no
+  tag, stayed open rather than being guessed at. FilaMan's own slot assignments
+  stayed empty throughout: we read, we do not write.
+- **Deducting an abort at the share it reached**, same print. Stopped at 95.8 %
+  of the layers, the blue filament was booked 2.09 g of its 2.45 g estimate,
+  which is the 85 % its layer curve had reached, not the 96 % a count of layers
+  would suggest. The other filament was finished before the stop and cost all of
+  it. The spools show it: 488.46 g to 486.37 g.
 
 ### What nobody has tried yet
 
-Written down plainly, because it is the first thing worth knowing:
+Written down plainly, because it is the second thing worth knowing:
 
 - **Only one printer model has ever run it: an X1C.** P1, A1 and H2D are
   untouched.
-- **No abort on real hardware.** The proportional booking is covered by unit
-  tests and by three real 3MF files, but never by an actual cancelled print.
 - **No spool change mid print**, as auto refill would cause. The code splits a
   filament row at the moment of the change and books both halves separately,
   and that path has only ever run in tests.
-- **Resolving a spool by its RFID tag has never run on hardware.** It exists
-  because FilaMan's Bambu Lab driver keeps a tray's type and colour but not its
-  `tray_uuid`, so nothing over there can match the tag against the spool that
-  carries it, and every print arrived with nothing assigned. Measured on a
-  running instance, then built; never yet seen resolving a real print.
+- **No real fault.** A print somebody stops is told from one that broke by
+  whether the printer left an error code behind. That reading is an assumption;
+  the code is stored with every print so the first real fault shows whether it
+  stands the right way round.
+- **Not together with FilaMan's scale.** FilaMan can assign a spool to a slot
+  itself within a time window after weighing it (`auto_assign_enabled`, off by
+  default), which would cover spools with no Bambu tag. Where FilaMan has an
+  assignment ours yields to it, so the two should complement each other, but
+  that combination has never been tried.
 - **Local prints**, started from the printer's display or from SD, are not built
   at all yet.
+
+### One limit of the tag route
+
+It reads FilaMan's `rfid_uid`, and that field holds whatever was put there. A
+scale writes the tag it read, which for a third party spool is an NTAG the
+printer never reports. So the tag route covers spools carrying their Bambu uuid,
+and for the rest a spool is picked by hand once, or FilaMan's scale assigns it.
 
 The test suite has 232 tests and runs on the standard library alone.
 

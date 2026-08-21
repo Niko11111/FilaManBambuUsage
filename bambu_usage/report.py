@@ -54,6 +54,16 @@ EXTERNAL_TRAY_SECTION = "vt_tray"
 EXTERNAL_AMS_ID = 255
 EXTERNAL_TRAY_ID = 254
 
+# Which tray the printer is drawing from, counted globally across AMS units.
+# 255 is the external holder, which rules.tray_to_slot_index expects as a
+# negative number instead.
+TRAY_NOW = "tray_now"
+EXTERNAL_TRAY_NOW = 255
+
+# What the printer says went wrong. Absent or zero after a print somebody
+# stopped; a code after a fault.
+ERROR_FIELDS = ("print_error", "mc_print_error_code")
+
 # An empty tray, and a spool without a readable tag, report this. Looking it up
 # would hang every empty chamber on whichever spool happens to carry it.
 EMPTY_TRAY_UUID = "0" * 32
@@ -154,6 +164,52 @@ def detect_transition(previous: dict, current: dict) -> Transition | None:
     if after in FINAL_STATES and before in ACTIVE_STATES:
         return Transition(TRANSITION_ENDED, gcode_state=after)
 
+    return None
+
+
+def active_tray(state: dict) -> int | None:
+    """The tray the printer is drawing from, as a global tray number.
+
+    The external holder comes back as -1, because that is how
+    rules.tray_to_slot_index wants it and 255 would otherwise be worked out as
+    tray 3 of AMS 63.
+
+    None where the printer says nothing, which is the normal state between
+    prints and must not be mistaken for tray zero.
+    """
+    section = state.get(PRINT_SECTION, {})
+    if not isinstance(section, dict):
+        return None
+
+    ams = section.get(AMS_SECTION)
+    if not isinstance(ams, dict):
+        return None
+
+    tray = _to_int(ams.get(TRAY_NOW))
+    if tray is None:
+        return None
+    return -1 if tray == EXTERNAL_TRAY_NOW else tray
+
+
+def error_code(state: dict) -> int | None:
+    """What the printer reported as the reason a print ended.
+
+    None where it reported nothing and where it reported zero: both mean there
+    was no fault, and a print without a fault is one somebody stopped.
+
+    **This reading is an assumption**, taken from how the Bambu reports are
+    commonly understood, and it was not verified against this printer. The code
+    itself is stored with the print, so the first real fault shows whether the
+    rule stands the right way round.
+    """
+    section = state.get(PRINT_SECTION, {})
+    if not isinstance(section, dict):
+        return None
+
+    for field in ERROR_FIELDS:
+        code = _to_int(section.get(field))
+        if code:
+            return code
     return None
 
 

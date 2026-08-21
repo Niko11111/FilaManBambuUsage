@@ -174,6 +174,20 @@ without step 2 every print would arrive with nothing assigned. Verified on a
 running instance: a spool carrying its Bambu uuid in `rfid_uid`, the tray
 holding it reported by the printer, and `spool_id: null` on every slot.
 
+How a row came by its spool is recorded in `filament.spool_source`:
+`filaman`, `tag` or `manual`. Only the middle one is shown, because a spool that
+turns up without anybody assigning it is the one that needs explaining; the
+other two are stored so that "why is this spool here" can still be answered
+months later.
+
+**A limit worth knowing.** The match reads FilaMan's `rfid_uid`, and that field
+holds whatever was put there. A scale connected to FilaMan writes the tag it
+read, which for a third party spool is an NTAG the printer never reports. The
+tag route therefore covers spools carrying their Bambu uuid, no more. FilaMan
+can also assign a slot itself within a time window after weighing
+(`auto_assign_enabled`, off by default); where that is used its assignment wins,
+and ours never runs. **That combination is untested.**
+
 We read the tag for our own booking and write nothing back.
 `printer_slot_assignments` belongs to the driver, which rewrites it from the
 printer's own reports; two writers on one row and the other one is faster.
@@ -291,6 +305,7 @@ Each of these needs defined behaviour. Quietly doing nothing is not behaviour.
 | **Every** slot without an assignment, on every print | Not a fault of this plugin and not repairable by it. FilaMan can only record an assignment once the printer has accepted it, and one such attempt was refused on the test instance; what it depends on is not established, see `05_Research_Sources.md`. The history stays usable: assign by hand, book, done. |
 | External spool, `slot_index` `"255-254"` | Treated like any other slot. FilaMan keeps it as a regular slot. |
 | Print aborted or failed | Do not deduct. Record the status, offer correction. |
+| Stopped by a person against stopped by a fault | A fault leaves a code behind in `print_error` or `mc_print_error_code`, a print somebody cancelled does not. **This reading is an assumption**, taken from how the reports are commonly understood and not verified against a printer, so the code is stored with the print: the first real fault shows whether the rule stands the right way round. |
 | 3MF unavailable (FTPS fails, file deleted) | Record the print with its file name and no consumption, status "3mf missing". Never drop it silently, or the print disappears without trace. |
 | Printer offline or MQTT drops | The listener reports its state on the page and reconnects with backoff. Other printers keep running. |
 | Plugin starts mid print | The beginning was missed and the mapping is unknown. The print is recorded as "incomplete" from the next state onwards and is not deducted. |

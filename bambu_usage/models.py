@@ -78,6 +78,11 @@ UNBOOKABLE_STATUSES = frozenset({STATUS_INCOMPLETE, STATUS_NO_3MF})
 # estimate it got through rather than all of it.
 STOPPED_STATUSES = frozenset({STATUS_FAILED, STATUS_CANCELLED})
 
+# How a filament row came by its spool, written to filament.spool_source.
+SPOOL_FROM_FILAMAN = "filaman"
+SPOOL_FROM_TAG = "tag"
+SPOOL_FROM_HAND = "manual"
+
 
 settings_table = Table(
     f"{TABLE_PREFIX}settings",
@@ -120,6 +125,9 @@ prints_table = Table(
     # Which layer the printer was on when the print stopped, so the curve can
     # be read at the right place long after the fact.
     Column("stopped_at_layer", Integer, nullable=True),
+    # What the printer reported when the print ended. Zero or absent means it
+    # was stopped rather than broken, which is what tells cancelled from failed.
+    Column("printer_error_code", Integer, nullable=True),
     # What the slicer said about the plate, for the history to show. None where
     # the 3MF could not be read, which is why all three are nullable.
     Column("estimated_seconds", Integer, nullable=True),
@@ -160,6 +168,10 @@ filament_table = Table(
     # traceable. It is divided when a row is split, see from_fraction below.
     Column("estimated_grams", Float, nullable=True),
     Column("estimated_length_m", Float, nullable=True),
+    # How this row came by its spool: FilaMan's own assignment, the RFID tag of
+    # the tray, or a person. Only shown for the tag today, kept for all three
+    # because "why is this spool here" cannot be answered afterwards otherwise.
+    Column("spool_source", String(20), nullable=True),
     # Which part of the print this row covers, 0.0 to 1.0. Both NULL means the
     # whole of it, which is the normal case. They are filled when a spool is
     # swapped mid print and the row is split in two, so each spool is charged
@@ -188,6 +200,9 @@ printer_status_table = Table(
     Column("layer_num", Integer, nullable=True),
     Column("total_layer_num", Integer, nullable=True),
     Column("remaining_minutes", Integer, nullable=True),
+    # Which tray the printer is drawing from right now, as a slot_index. The
+    # card marks the filament block that belongs to it.
+    Column("active_slot_index", String(20), nullable=True),
     Column("last_error", String(512), nullable=True),
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )

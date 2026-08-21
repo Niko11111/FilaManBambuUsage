@@ -63,6 +63,8 @@ class PrinterStatus(BaseModel):
     layer_num: int | None = None
     total_layer_num: int | None = None
     remaining_minutes: int | None = None
+    # Which slot the printer is drawing from right now.
+    active_slot_index: str | None = None
     last_error: str | None = None
     # When the listener last wrote this row. A row that stops being refreshed is
     # how a dead tracker becomes visible from the page.
@@ -87,6 +89,8 @@ class FilamentUsage(BaseModel):
     spent_grams: float | None = None
     spent_at: UtcDatetime | None = None
     manual_override: bool = False
+    # How this row came by its spool: filaman, tag or manual. See models.py.
+    spool_source: str | None = None
     # Which part of the print this row covers, when a spool was swapped during
     # it. Both None means the whole print, which is the normal case.
     # How much filament the slicer wanted, as a length. Only ever shown, never
@@ -113,6 +117,9 @@ class PrintRecord(BaseModel):
     spent: bool
     # How far a print that did not finish got, 0.0 to 1.0. None when unknown.
     completed_fraction: float | None = None
+    # What the printer reported when it stopped. None where it reported nothing,
+    # which is what tells a print somebody cancelled from one that broke.
+    printer_error_code: int | None = None
     # How many layers the print has, taken from the curves read out of its
     # gcode. None when there are none.
     layer_count: int | None = None

@@ -44,8 +44,10 @@ from . import rules
 from .report import (
     STATE_FINISH,
     TRANSITION_STARTED,
+    active_tray,
     completed_fraction,
     describe_job,
+    error_code,
     detect_transition,
     gcode_state_of,
     layer_of,
@@ -270,6 +272,14 @@ class PrinterListener:
         )
         await self.publish_status()
 
+    def _active_slot_index(self) -> str | None:
+        """Which slot the printer is drawing from, named the way FilaMan does.
+
+        Converted here rather than in report.py, which may not import rules.
+        """
+        tray = active_tray(self.state)
+        return None if tray is None else rules.tray_to_slot_index(tray)
+
     def _tray_tags(self) -> dict[str, str]:
         """What tag sits in which slot, as the printer last reported it.
 
@@ -318,9 +328,16 @@ class PrinterListener:
     async def _end_print(self, gcode_state: str | None, at: datetime) -> None:
         """Close the running print and let the service decide about booking."""
         from . import service, settings, store
-        from .models import STATUS_FAILED, STATUS_FINISHED
+        from .models import STATUS_CANCELLED, STATUS_FAILED, STATUS_FINISHED
 
-        status = STATUS_FINISHED if gcode_state == STATE_FINISH else STATUS_FAILED
+        # A fault leaves a code behind, a print somebody stopped does not. That
+        # reading is an assumption, see report.error_code, so the code itself is
+        # stored with the print: the first real fault shows whether it holds.
+        code = error_code(self.state)
+        if gcode_state == STATE_FINISH:
+            status = STATUS_FINISHED
+        else:
+            status = STATUS_FAILED if code else STATUS_CANCELLED
 
         async with self.sessions() as db:
             print_id = self.current_print_id
@@ -344,6 +361,7 @@ class PrinterListener:
                 at,
                 completed_fraction=completed_fraction(self.state),
                 stopped_at_layer=layer_of(self.state),
+                printer_error_code=code,
             )
 
         logger.info("printer %s: print %s ended as %s", self.printer_id, print_id, status)
@@ -459,6 +477,7 @@ class PrinterListener:
                 layer_num=layer_of(self.state),
                 total_layer_num=total_layers_of(self.state),
                 remaining_minutes=remaining_minutes_of(self.state),
+                active_slot_index=self._active_slot_index(),
                 last_error=self.last_error,
             )
             await db.commit()

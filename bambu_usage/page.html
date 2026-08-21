@@ -351,6 +351,12 @@
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
     }
+    /* The block the printer is drawing from right now. A line at the edge and a
+       touch of the accent, no second colour: the card has enough of those. */
+    .filament.active {
+      border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 8%, transparent);
+    }
     .filament.needs-spool {
       border-color: var(--accent-3);
       background: color-mix(in srgb, var(--accent-3) 10%, transparent);
@@ -729,6 +735,10 @@
       // Written out rather than assembled from the level, so every key stays
       // visible to the test that checks the page against the dictionaries.
       var WARNING_KEYS = { tooLittle: 'picker.tooLittle', tight: 'picker.tight' };
+
+      // How a row came by its spool. Only the tag is worth a word: the other two
+      // are the normal case and would only add noise.
+      var SPOOL_FROM_TAG = 'tag';
 
       // Written out rather than built from the status string, so every key is
       // visible to the test that checks the dictionaries against the page.
@@ -1352,13 +1362,21 @@
         }
 
         var list = el('div', 'filaments');
+        var activeSlot = isRunning ? activeSlotIndex() : null;
         record.filaments.forEach(function (usage) {
-          list.appendChild(filamentBlock(usage, isRunning));
+          list.appendChild(filamentBlock(usage, isRunning, activeSlot));
         });
         body.appendChild(list);
 
         wrapper.appendChild(body);
         return wrapper;
+      }
+
+      function activeSlotIndex() {
+        // From the printer that is printing, not from the record: the record is
+        // written once at the start, this moves with every report.
+        var printer = printers.find(function (entry) { return entry.current_print_id; });
+        return printer ? printer.active_slot_index : null;
       }
 
       function printHead(record, isRunning) {
@@ -1493,6 +1511,9 @@
         }
         add(totalGrams(record), 'weight');
 
+        if (record.printer_error_code) {
+          add(t('history.errorCode', { code: record.printer_error_code }), 'warning');
+        }
         if (record.layer_count) {
           add(t('history.layers', { count: record.layer_count }), 'layers');
         }
@@ -1625,9 +1646,15 @@
         });
       }
 
-      function filamentBlock(usage, isRunning) {
+      function filamentBlock(usage, isRunning, activeSlot) {
         var assigned = usage.spool_id !== null && usage.spool_id !== undefined;
         var block = el('div', assigned ? 'filament' : 'filament needs-spool');
+
+        // Which one the printer is drawing from at this moment. Quiet on
+        // purpose: the card already carries enough colour.
+        if (isRunning && activeSlot && usage.slot_index === activeSlot) {
+          block.classList.add('active');
+        }
 
         var colour = el('div', 'filament-color');
         if (usage.color_hex) colour.style.background = usage.color_hex;
@@ -1719,6 +1746,7 @@
           ? t('history.bookedIs', { grams: grams(usage.spent_grams) })
           : t('history.notBooked'));
         if (usage.manual_override) parts.push(t('history.corrected'));
+        if (usage.spool_source === SPOOL_FROM_TAG) parts.push(t('history.foundByTag'));
         return parts.join(' · ');
       }
 

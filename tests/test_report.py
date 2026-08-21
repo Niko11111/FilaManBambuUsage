@@ -14,6 +14,7 @@ import unittest
 
 from bambu_usage.report import (
     EXTERNAL_AMS_ID,
+    active_tray,
     EXTERNAL_TRAY_ID,
     PRINT_TYPE_CLOUD,
     PRINT_TYPE_LOCAL,
@@ -32,10 +33,11 @@ from bambu_usage.report import (
     merge_report,
     progress_of,
     remaining_minutes_of,
+    error_code,
     total_layers_of,
     tray_tags,
 )
-from bambu_usage.rules import EXTERNAL_SLOT_INDEX, slot_index
+from bambu_usage.rules import EXTERNAL_SLOT_INDEX, slot_index, tray_to_slot_index
 
 
 def report(**fields):
@@ -241,6 +243,45 @@ class LiveFiguresTest(unittest.TestCase):
     def test_no_remaining_time(self):
         self.assertIsNone(remaining_minutes_of(report(gcode_state=STATE_RUNNING)))
         self.assertIsNone(remaining_minutes_of(report(mc_remaining_time="soon")))
+
+
+class ActiveTrayTest(unittest.TestCase):
+    """Which tray the printer is drawing from."""
+
+    def test_reads_the_loaded_tray(self):
+        self.assertEqual(active_tray({"print": {"ams": {"tray_now": "3"}}}), 3)
+
+    def test_the_external_holder_comes_back_negative(self):
+        # 255 worked out as a global tray number would be tray 3 of AMS 63.
+        # rules.tray_to_slot_index wants a negative number for the holder.
+        tray = active_tray({"print": {"ams": {"tray_now": "255"}}})
+
+        self.assertLess(tray, 0)
+        self.assertEqual(tray_to_slot_index(tray), EXTERNAL_SLOT_INDEX)
+
+    def test_silence_is_not_tray_zero(self):
+        for state in ({}, {"print": {}}, {"print": {"ams": {}}}, {"print": {"ams": "x"}}):
+            with self.subTest(state=state):
+                self.assertIsNone(active_tray(state))
+
+
+class ErrorCodeTest(unittest.TestCase):
+    """What the printer said about why a print ended."""
+
+    def test_a_code_is_read(self):
+        self.assertEqual(error_code({"print": {"print_error": 50348044}}), 50348044)
+
+    def test_the_other_field_counts_too(self):
+        self.assertEqual(error_code({"print": {"mc_print_error_code": 117440512}}), 117440512)
+
+    def test_zero_is_no_fault(self):
+        # A print somebody stopped reports zero, and zero must not read as a
+        # fault, or every cancelled print would look like a broken printer.
+        self.assertIsNone(error_code({"print": {"print_error": 0}}))
+
+    def test_nothing_reported_is_no_fault(self):
+        self.assertIsNone(error_code({"print": {}}))
+        self.assertIsNone(error_code({}))
 
 
 class TrayTagsTest(unittest.TestCase):

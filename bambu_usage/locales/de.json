@@ -39,7 +39,7 @@
     "bookNow": "gleich buchen",
     "book": "Diesen Druck buchen",
     "correct": "Korrigieren",
-    "corrected": "von Hand korrigiert",
+    "corrected": "Menge von Hand gesetzt",
     "stoppedAt": "bei {percent}% abgebrochen",
     "notBooked": "nicht gebucht",
     "stateBooked": "gebucht",
@@ -70,7 +70,9 @@
     "deleteConfirm": "Löschen",
     "cancel": "Abbrechen",
     "allPrinters": "Alle Drucker",
-    "durationHoursOnly": "{hours} h"
+    "durationHoursOnly": "{hours} h",
+    "foundByTag": "über RFID erkannt",
+    "errorCode": "Druckerfehler {code}"
   },
   "printType": {
     "cloud": "Cloud-Druck",
