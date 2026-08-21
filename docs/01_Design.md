@@ -175,10 +175,15 @@ running instance: a spool carrying its Bambu uuid in `rfid_uid`, the tray
 holding it reported by the printer, and `spool_id: null` on every slot.
 
 How a row came by its spool is recorded in `filament.spool_source`:
-`filaman`, `tag` or `manual`. Only the middle one is shown, because a spool that
-turns up without anybody assigning it is the one that needs explaining; the
-other two are stored so that "why is this spool here" can still be answered
-months later.
+`filaman`, `tag` or `manual`. The card names the two that explain something,
+"found by RFID" and "assigned by hand"; FilaMan's own assignment says nothing,
+being the normal case.
+
+Beside it sits a different fact, and keeping the two apart is the point: whether
+somebody overruled the **amount**. That remark only appears where the booked
+weight really differs from the estimate, because a correction that changed
+nothing is not a message. It also quietly retires the rows from before 0.8.2,
+when picking a spool set the same flag as correcting an amount.
 
 **A limit worth knowing.** The match reads FilaMan's `rfid_uid`, and that field
 holds whatever was put there. A scale connected to FilaMan writes the tag it

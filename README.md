@@ -39,7 +39,7 @@ is already set up in FilaMan.
 
 ## Status
 
-**Version 0.8.2. It works, and it has booked a real print.**
+**Version 0.8.3. It works, and it has booked a real print.**
 
 ### Proven on hardware
 

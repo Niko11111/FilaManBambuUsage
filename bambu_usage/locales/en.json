@@ -72,7 +72,8 @@
     "allPrinters": "All printers",
     "durationHoursOnly": "{hours} h",
     "foundByTag": "found by RFID",
-    "errorCode": "printer error {code}"
+    "errorCode": "printer error {code}",
+    "assignedByHand": "assigned by hand"
   },
   "printType": {
     "cloud": "cloud print",

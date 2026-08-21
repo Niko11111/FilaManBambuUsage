@@ -736,9 +736,16 @@
       // visible to the test that checks the page against the dictionaries.
       var WARNING_KEYS = { tooLittle: 'picker.tooLittle', tight: 'picker.tight' };
 
-      // How a row came by its spool. Only the tag is worth a word: the other two
-      // are the normal case and would only add noise.
-      var SPOOL_FROM_TAG = 'tag';
+      // How a row came by its spool. FilaMan's own assignment says nothing,
+      // being the normal case; the other two explain themselves.
+      var SPOOL_SOURCE_KEYS = {
+        tag: 'history.foundByTag',
+        manual: 'history.assignedByHand'
+      };
+
+      // Below this two weights are the same weight, and the difference is the
+      // arithmetic rather than a decision.
+      var GRAM_NOISE = 0.005;
 
       // Written out rather than built from the status string, so every key is
       // visible to the test that checks the dictionaries against the page.
@@ -1745,9 +1752,23 @@
         parts.push(usage.spent_at
           ? t('history.bookedIs', { grams: grams(usage.spent_grams) })
           : t('history.notBooked'));
-        if (usage.manual_override) parts.push(t('history.corrected'));
-        if (usage.spool_source === SPOOL_FROM_TAG) parts.push(t('history.foundByTag'));
+        // Only where somebody's number actually differs from the slicer's. A
+        // correction that changed nothing is not a message, and until 0.8.2 the
+        // flag was also set by merely picking a spool.
+        if (usage.manual_override && changedTheAmount(usage)) {
+          parts.push(t('history.corrected'));
+        }
+
+        var origin = SPOOL_SOURCE_KEYS[usage.spool_source];
+        if (origin) parts.push(t(origin));
+
         return parts.join(' · ');
+      }
+
+      function changedTheAmount(usage) {
+        if (usage.spent_grams === null || usage.spent_grams === undefined) return false;
+        if (usage.estimated_grams === null || usage.estimated_grams === undefined) return true;
+        return Math.abs(usage.spent_grams - usage.estimated_grams) >= GRAM_NOISE;
       }
 
       function isSplit(usage) {

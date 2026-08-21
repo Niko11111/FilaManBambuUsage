@@ -72,7 +72,8 @@
     "allPrinters": "Alle Drucker",
     "durationHoursOnly": "{hours} h",
     "foundByTag": "über RFID erkannt",
-    "errorCode": "Druckerfehler {code}"
+    "errorCode": "Druckerfehler {code}",
+    "assignedByHand": "manuell zugeordnet"
   },
   "printType": {
     "cloud": "Cloud-Druck",
