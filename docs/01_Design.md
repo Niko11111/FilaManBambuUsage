@@ -385,6 +385,17 @@ rather than by the page, because a filter that only searches the four records
 already loaded is not a filter. The sort order is an allow list and the search
 term is escaped, so neither can become a way to read something else.
 
+**A fresh installation says what is missing.** FilaMan mounts plugin routers
+when it starts, while the page itself comes from its catch-all, so right after
+an upload the page loads and nothing under `/bambu-usage/` answers. That state is
+recognisable rather than guessed: a path with no router behind it returns
+`404 {"detail":"Not Found"}`, while an unreachable FilaMan fails the request
+outright. The first case shows a notice naming the restart, the second keeps
+saying the router is out of reach, because a restart would not be the advice to
+give. On a 404 the page stops after the health check instead of letting every
+other request add its own vague complaint, and when the routes appear it picks
+the boot up by itself, without a reload.
+
 While a print runs its card is fetched again on every poll, so what it has used
 so far grows with it; the finished list below is left alone and keeps however
 much of it is unfolded.

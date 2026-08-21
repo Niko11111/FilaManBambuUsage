@@ -600,7 +600,8 @@
       <p data-i18n="page.subtitle"></p>
     </div>
 
-    <div id="message" class="message" hidden></div>
+      <div id="needs-restart" class="message" data-i18n="status.needsRestart" hidden></div>
+  <div id="message" class="message" hidden></div>
 
     <section class="fm-card">
       <div class="card-head">
@@ -867,6 +868,8 @@
 
       function unwrap(response) {
         if (response.status === 204) return null;
+        // The status travels on the error. Without it a caller cannot tell a
+        // route that is not there from a server that is not there.
         return response.json().catch(function () {
           return null;
         }).then(function (data) {
@@ -875,7 +878,9 @@
           // code is what this page translates. See docs/01_Design.md section 9.
           var detail = data && data.detail ? data.detail : {};
           var message = detail.code ? t(detail.code) : null;
-          throw new Error(message || detail.message || t('errors.generic'));
+          var failure = new Error(message || detail.message || t('errors.generic'));
+          failure.status = response.status;
+          throw failure;
         });
       }
 
@@ -942,20 +947,59 @@
       /* ── printers ────────────────────────────────────────────── */
 
       function refreshStatus() {
+        return checkHealth().then(function (mounted) {
+          // Nothing else will answer either. One clear message beats three
+          // vague ones, so the rest of the round is skipped.
+          if (!mounted) return null;
+
+          // Mounted now and never booted: the routes appeared, so FilaMan was
+          // restarted while this page stayed open. Pick up where boot stopped,
+          // rather than leaving an empty page behind a notice that just went.
+          if (!booted) return loadEverything();
+          return withPrinters();
+        });
+      }
+
+      function loadEverything() {
+        return withPrinters()
+          .then(loadSpools)
+          .then(loadSettings)
+          .then(function () { return loadHistory(true); })
+          .then(function () { booted = true; });
+      }
+
+      function checkHealth() {
         return read(MOUNT + '/health').then(function (health) {
-          var dot = document.getElementById('health-dot');
-          var label = document.getElementById('health-label');
-          dot.className = 'dot ok';
-          label.textContent = t('status.mounted');
+          document.getElementById('health-dot').className = 'dot ok';
+          document.getElementById('health-label').textContent = t('status.mounted');
           document.getElementById('health-version').textContent =
             t('status.version') + ' ' + health.version;
           currency = health.currency || '';
-        }).catch(function () {
+          showRestartNotice(false);
+          return true;
+        }).catch(function (error) {
+          // A 404 while this page itself was served means FilaMan is running
+          // and our router is not mounted, which is exactly the state after
+          // installing without a restart. Anything else means FilaMan is out
+          // of reach, and a restart would not be the advice to give.
+          var notMounted = Boolean(error) && error.status === 404;
+
           document.getElementById('health-dot').className = 'dot bad';
-          document.getElementById('health-label').textContent = t('status.unreachable');
-        }).then(function () {
-          return read(MOUNT + '/status');
-        }).then(function (rows) {
+          document.getElementById('health-label').textContent =
+            t(notMounted ? 'status.notMounted' : 'status.unreachable');
+          showRestartNotice(notMounted);
+          return false;
+        });
+      }
+
+      function showRestartNotice(needed) {
+        // Its own element, not the complaint box: that one is for passing
+        // trouble and gets emptied by act(). This is a state.
+        document.getElementById('needs-restart').hidden = !needed;
+      }
+
+      function withPrinters() {
+        return read(MOUNT + '/status').then(function (rows) {
           printers = rows || [];
           renderPrinters();
 
@@ -2083,11 +2127,13 @@
       document.getElementById('settings-scope').addEventListener('change', fillSettings);
 
       loadDictionary()
-        .then(refreshStatus)
-        .then(loadSpools)
-        .then(loadSettings)
-        .then(function () { return loadHistory(true); })
-        .then(function () { booted = true; })
+        .then(checkHealth)
+        .then(function (mounted) {
+          // Without the routes nothing below can answer, and every one of them
+          // would add its own vague complaint on top of the one notice that
+          // actually says what to do.
+          return mounted ? loadEverything() : null;
+        })
         .catch(complain);
 
       setInterval(function () {

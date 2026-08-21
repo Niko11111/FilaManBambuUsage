@@ -19,7 +19,9 @@
     "printing": "druckt {file}",
     "idle": "kein Druck aktiv",
     "lastError": "Letzter Fehler",
-    "updated": "Stand {time}"
+    "updated": "Stand {time}",
+    "notMounted": "nicht eingehängt",
+    "needsRestart": "Das Plugin ist installiert, aber seine Endpunkte antworten noch nicht. Starte FilaMan einmal neu, danach ist alles da."
   },
   "history": {
     "heading": "Drucke",

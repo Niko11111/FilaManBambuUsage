@@ -19,7 +19,9 @@
     "printing": "printing {file}",
     "idle": "no print running",
     "lastError": "Last error",
-    "updated": "updated {time}"
+    "updated": "updated {time}",
+    "notMounted": "not mounted",
+    "needsRestart": "The plugin is installed, but its endpoints do not answer yet. Restart FilaMan once and everything is there."
   },
   "history": {
     "heading": "Prints",

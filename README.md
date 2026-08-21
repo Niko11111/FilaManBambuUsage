@@ -39,7 +39,7 @@ is already set up in FilaMan.
 
 ## Status
 
-**Version 0.8.0. It works, and it has booked a real print.**
+**Version 0.8.1. It works, and it has booked a real print.**
 
 Verified end to end on hardware: the print was detected, the 3MF fetched over
 FTPS, slicer filament 4 resolved to AMS slot 1-3 and from there to spool 25,
