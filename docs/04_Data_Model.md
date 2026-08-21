@@ -117,6 +117,14 @@ turned into a deduction, so material is only ever taken away. Giving some back
 is `record_adjustment(spool, "relative", delta_weight_g=...)`, where a positive
 delta raises the remaining weight.
 
+**Every timestamp leaves the plugin with its offset.** The columns are declared
+`DateTime(timezone=True)`, but SQLite hands back what it was given without an
+offset it never stored, so the values come out naive. Serialised like that, a
+browser reads them as local time and shows a print an hour or two early.
+`schemas.UtcDatetime` stamps a naive value as UTC on its way out, which is
+correct rather than convenient: everything written here comes from
+`datetime.now(timezone.utc)`.
+
 Deleting a print never touches a spool. `store.delete_print` removes the print
 and its filament rows and nothing else, the same way `purge_expired_history`
 does it for the retention: rows first and explicitly, because the declared

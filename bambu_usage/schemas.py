@@ -9,9 +9,29 @@ Enforced by tools/check_architecture.py.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    """Stamp a naive timestamp as UTC, and leave an aware one alone.
+
+    The columns are DateTime(timezone=True), but SQLite hands back what it was
+    given without an offset it was never asked to store. Serialised like that,
+    a browser reads the value as local time and shows every print an hour or two
+    early. Saying UTC is not a guess: everything this plugin writes comes from
+    datetime.now(timezone.utc).
+    """
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=timezone.utc)
+
+
+# Every timestamp that leaves this plugin carries its offset. One definition,
+# so the next field somebody adds inherits the decision rather than the bug.
+UtcDatetime = Annotated[datetime, AfterValidator(_as_utc)]
 
 
 class PluginSettings(BaseModel):
@@ -46,7 +66,7 @@ class PrinterStatus(BaseModel):
     last_error: str | None = None
     # When the listener last wrote this row. A row that stops being refreshed is
     # how a dead tracker becomes visible from the page.
-    updated_at: datetime | None = None
+    updated_at: UtcDatetime | None = None
 
 
 class FilamentUsage(BaseModel):
@@ -65,7 +85,7 @@ class FilamentUsage(BaseModel):
     color_hex: str | None = None
     estimated_grams: float | None = None
     spent_grams: float | None = None
-    spent_at: datetime | None = None
+    spent_at: UtcDatetime | None = None
     manual_override: bool = False
     # Which part of the print this row covers, when a spool was swapped during
     # it. Both None means the whole print, which is the normal case.
@@ -87,8 +107,8 @@ class PrintRecord(BaseModel):
     printer_name: str | None = None
     file_name: str
     print_type: str
-    started_at: datetime
-    finished_at: datetime | None = None
+    started_at: UtcDatetime
+    finished_at: UtcDatetime | None = None
     status: str
     spent: bool
     # How far a print that did not finish got, 0.0 to 1.0. None when unknown.
