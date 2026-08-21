@@ -19,3 +19,8 @@ venv/
 
 # OS
 .DS_Store
+
+# Notes for the assistant that works on this repository. Local only: they carry
+# the address of a test instance and are addressed at one person, while the
+# publishable half of them lives in CONTRIBUTING.md.
+CLAUDE.md

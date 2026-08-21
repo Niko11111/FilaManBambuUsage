@@ -67,7 +67,7 @@ merged, because a single message is rarely complete. OpenSpoolMan keeps
 
 > Note for our implementation: OpenSpoolMan keeps both as module level globals
 > mutated from MQTT callbacks. That is exactly what this project forbids, see
-> `CLAUDE.md`. The same state belongs on the listener object.
+> `CONTRIBUTING.md`. The same state belongs on the listener object.
 
 ### Relevant fields under `print`
 

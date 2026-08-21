@@ -89,8 +89,8 @@ settings_table = Table(
     # Abandoned, and kept only because nothing here is ever dropped. Clearing a
     # slot assignment would mean writing into FilaMan's printer_slot_assignments,
     # which the Bambu Lab driver owns and rewrites from RFID on the next report.
-    # Two writers on one row is worse than a missing switch. See CLAUDE.md
-    # section 4 and docs/01_Design.md section 8.2.
+    # Two writers on one row is worse than a missing switch. See
+    # docs/01_Design.md section 8.2.
     Column("clear_assignment_when_empty", Boolean, nullable=False, default=False),
     Column("history_retention_days", Integer, nullable=False, default=365),
     Column("updated_at", DateTime(timezone=True), server_default=func.now()),
@@ -218,7 +218,7 @@ def _add_missing_columns(connection: Any) -> None:
     """Add columns an existing table has not got yet.
 
     Only nullable columns can be added this way, which is exactly what the
-    additive-only rule in CLAUDE.md allows: a NOT NULL column would need a value
+    additive-only rule in CONTRIBUTING.md allows: a NOT NULL column would need a value
     for every row that already exists, and inventing one is how history gets
     corrupted. Such a column is refused loudly rather than added wrongly.
     """
@@ -237,7 +237,7 @@ def _add_missing_columns(connection: Any) -> None:
             if not column.nullable and column.server_default is None:
                 raise RuntimeError(
                     f"cannot add {table.name}.{column.name} to an existing table: "
-                    "a new column has to be nullable, see CLAUDE.md section 6"
+                    "a new column has to be nullable, see CONTRIBUTING.md section 5"
                 )
 
             definition = column.type.compile(connection.dialect)

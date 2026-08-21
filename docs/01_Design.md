@@ -262,7 +262,7 @@ Each of these needs defined behaviour. Quietly doing nothing is not behaviour.
 | Case | Behaviour |
 |---|---|
 | No `PrinterSlotAssignment.spool_id` on the slot | Print lands in the history, the row is marked "assignment open" and offers a dropdown to assign a spool. Do not guess. |
-| **Every** slot without an assignment, on every print | Not a fault of this plugin and not repairable by it. FilaMan can only record an assignment once the printer has accepted it, which a Bambu printer refuses unless LAN-only mode and Developer Mode are both on. See the README and `05_Research_Sources.md`. The history stays usable: assign by hand, book, done. |
+| **Every** slot without an assignment, on every print | Not a fault of this plugin and not repairable by it. FilaMan can only record an assignment once the printer has accepted it, and one such attempt was refused on the test instance; what it depends on is not established, see `05_Research_Sources.md`. The history stays usable: assign by hand, book, done. |
 | External spool, `slot_index` `"255-254"` | Treated like any other slot. FilaMan keeps it as a regular slot. |
 | Print aborted or failed | Do not deduct. Record the status, offer correction. |
 | 3MF unavailable (FTPS fails, file deleted) | Record the print with its file name and no consumption, status "3mf missing". Never drop it silently, or the print disappears without trace. |
@@ -402,7 +402,7 @@ rewrites it from the printer's RFID data on the next report. Two writers on one
 row, and the other one is faster. The switch existed in OpenSpoolMan because
 Spoolman has no driver keeping that link current; FilaMan has one, so taking an
 emptied spool out and putting a new one in updates the assignment by itself and
-this plugin simply reads the result. See CLAUDE.md section 4.
+this plugin simply reads the result. See CONTRIBUTING.md section 3.
 
 The column stays in `bambu_usage_settings`, because nothing in this schema is
 ever dropped, and it is marked as abandoned there.

@@ -26,7 +26,7 @@ May import: nothing from this plugin. Must not import fastapi or sqlalchemy
 either, so it stays callable against a file on disk. Enforced by
 tools/check_architecture.py.
 
-On the size of this file, past the 400 lines CLAUDE.md asks a reason for:
+On the size of this file, past the 400 lines CONTRIBUTING.md asks a reason for:
 everything about a 3MF is here, getting one and reading one, and the reading is
 what grew. Splitting the two apart is the obvious next move if the filament
 order for local prints lands here as well.

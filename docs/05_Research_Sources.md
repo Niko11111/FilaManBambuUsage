@@ -62,7 +62,7 @@ re-read against the source on 2026-08-20, the rest on 2026-08-18.
 | `PrinterSlotAssignment.spool_id` | `app/models/printer.py` |
 | A slot assignment can only be **written** by the driver, never by an API call | `app/api/v1/printers.py`: the only slots route is `GET /{printer_id}/slots`; `POST /{printer_id}/driver/action` calls a driver method and returns its result without touching the database |
 | The assignment reaches the database when the printer reports the tray back | `app/plugins/manager.py`, the slot upsert fed by the driver's emitter |
-| Assigning a spool needs LAN-only mode and Developer Mode on the printer | the Bambu Lab driver's own description in FilaMan's plugin list; observed on the test instance on 2026-08-20 as `{"error":{"address":"/printers/1/driver/action","description":"unauthorized user","type":1}}`, which is the printer's error format, not FilaMan's |
+| The Bambu Lab driver names LAN-only mode and Developer Mode as conditions for assigning a spool, and one attempt on the test instance was refused | the driver's own description in FilaMan's plugin list; observed on 2026-08-20 as `{"error":{"address":"/printers/1/driver/action","description":"unauthorized user","type":1}}`, which is the printer's error format, not FilaMan's |
 | `record_consumption()` flips the sign, aggregates, clamps at 0 | `app/services/spool_service.py`, `record_consumption()` |
 | The Spoolman layer can write today, `/use` included | `app/plugins/spoolmanapi/service.py`, `use_spool()`, `measure_spool()`, `update_spool()` |
 | `get_all_settings()` returns `currency` only | `app/plugins/spoolmanapi/service.py`, `get_all_settings()` |
@@ -127,7 +127,7 @@ Read as of 2026-08-20, MIT.
 | Spoolman endpoints used | `spoolman_client.py`: `fetchSpoolList`, `getSpoolById`, `patchExtraTags`, `consumeSpool`, `fetchSettings` |
 
 The second to last row is the reason for the rule against module level mutable
-state in `CLAUDE.md`. It is not a hypothetical concern.
+state in `CONTRIBUTING.md`. It is not a hypothetical concern.
 
 ## 4. Side finding on the SpoolmanScale documentation
 
@@ -141,8 +141,8 @@ Verified on 2026-08-19 against the actual instance, not just against the source
 on GitHub:
 
 ```
-GET  http://192.168.4.100:8002/spoolman/api/v1/info     200
-GET  http://192.168.4.100:8002/spoolman/api/v1/health   200  {"status":"healthy"}
+GET  http://<filaman-host>/spoolman/api/v1/info     200
+GET  http://<filaman-host>/spoolman/api/v1/health   200  {"status":"healthy"}
 ```
 
 The OpenAPI schema of that same instance lists, among 176 paths:
@@ -154,8 +154,8 @@ PUT  /spoolman/api/v1/spool/{spool_id}/measure
 
 That settles the GET only claim empirically.
 
-Corrected along the way: the instance runs on **192.168.4.100:8002**, not on the
-192.168.4.59 named in the older note.
+Corrected along the way: the note that preceded this one named the wrong host
+for the test instance.
 
 Practical consequence, independent of this plugin: an existing OpenSpoolMan
 instance can be pointed at FilaMan with very little work. Four of the five
