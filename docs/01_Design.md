@@ -155,7 +155,33 @@ can be switched off.
 That is more honest than a heuristic that quietly gets it wrong, and it
 delivers most of the value for very little code.
 
-### 6.2 Sequence, stage 1
+### 6.2 Which spool sits in the slot
+
+Asked twice, in this order:
+
+1. **FilaMan's `PrinterSlotAssignment`.** A person or the driver put that spool
+   there, and nothing read off a printer overrules it.
+2. **The RFID tag of the tray**, from `print.ams` in the report the listener
+   receives anyway: `report.tray_tags()` reads it, `filaman.find_spool_by_rfid()`
+   looks the spool up by `rfid_uid`, compared without regard to case.
+3. Neither answers: the row stays open and says so. Never guessed.
+
+The second step exists because of a measurement, not a preference. FilaMan's
+Bambu Lab driver stores a tray's type, colour, `tray_info_idx` and temperatures,
+but **not** its `tray_uuid`. The one identifier that connects a tray to the
+spool in it never reaches the database, so the match cannot happen there, and
+without step 2 every print would arrive with nothing assigned. Verified on a
+running instance: a spool carrying its Bambu uuid in `rfid_uid`, the tray
+holding it reported by the printer, and `spool_id: null` on every slot.
+
+We read the tag for our own booking and write nothing back.
+`printer_slot_assignments` belongs to the driver, which rewrites it from the
+printer's own reports; two writers on one row and the other one is faster.
+
+An empty tray reports a uuid of nothing but zeros. It is never looked up, or
+every empty chamber would hang on whichever spool happens to carry it.
+
+### 6.3 Sequence, stage 1
 
 ```
 1. MQTT message with print.command == "project_file" and print.url
@@ -194,7 +220,7 @@ delivers most of the value for very little code.
          source="bambu_usage", note="<file name>")
 ```
 
-### 6.3 Deducting at the end, not at the start
+### 6.4 Deducting at the end, not at the start
 
 OpenSpoolMan deducts **when the print starts**, as soon as the mapping is
 complete (`spendFilaments()` runs once `PENDING_PRINT_METADATA["complete"]` is

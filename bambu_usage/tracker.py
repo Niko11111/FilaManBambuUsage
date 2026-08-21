@@ -40,6 +40,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from . import rules
 from .report import (
     STATE_FINISH,
     TRANSITION_STARTED,
@@ -52,6 +53,7 @@ from .report import (
     progress_of,
     remaining_minutes_of,
     total_layers_of,
+    tray_tags,
 )
 
 if TYPE_CHECKING:  # imported for annotations only
@@ -253,6 +255,7 @@ class PrinterListener:
                 subtask_id=job.subtask_id,
                 started_at=at,
                 status=status,
+                tray_tags=self._tray_tags(),
             )
 
         self.current_print_id = print_id
@@ -266,6 +269,18 @@ class PrinterListener:
             len(metadata.filaments),
         )
         await self.publish_status()
+
+    def _tray_tags(self) -> dict[str, str]:
+        """What tag sits in which slot, as the printer last reported it.
+
+        Read out of the state that is merged anyway, so no extra subscription
+        and no state of its own. The ids become a slot_index here, where both
+        report and rules may be imported; report may not import rules.
+        """
+        return {
+            rules.slot_index(tag.ams_id, tag.tray_id): tag.uuid
+            for tag in tray_tags(self.state)
+        }
 
     async def _fetch_3mf(self, job: PrintJob) -> tuple[Any, str | None]:
         """Fetch and read the 3MF of *job*.

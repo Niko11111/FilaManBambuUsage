@@ -56,6 +56,8 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
 
         # slot_index -> spool id, as PrinterSlotAssignment would have it.
         self.slots: dict[str, int] = {}
+        # rfid tag -> spool id, as FilaMan's spool table would have it.
+        self.tags: dict[str, int] = {}
         # spool id -> spool, so a deleted spool is simply one that is missing.
         self.spools: dict[int, SimpleNamespace] = {}
         self.consumptions: list[tuple[int, float, str | None]] = []
@@ -68,6 +70,7 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
 
         for name, replacement in (
             ("resolve_spool_for_slot", self.fake_resolve_spool),
+            ("find_spool_by_rfid", self.fake_find_by_rfid),
             ("load_spool", self.fake_load_spool),
             ("record_consumption", self.fake_record_consumption),
             ("record_adjustment", self.fake_record_adjustment),
@@ -79,6 +82,10 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
 
     async def fake_resolve_spool(self, db, printer_id, slot_index):
         return self.slots.get(slot_index)
+
+    async def fake_find_by_rfid(self, db, uid):
+        # Case insensitive, like the query it stands in for.
+        return next((s for tag, s in self.tags.items() if tag.lower() == uid.lower()), None)
 
     async def fake_load_spool(self, db, spool_id):
         return self.spools.get(spool_id)
@@ -114,7 +121,7 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
             thumbnail_mime="image/png",
         )
 
-    async def start(self, db, ams_mapping, subtask_id="task-1", metadata=None):
+    async def start(self, db, ams_mapping, subtask_id="task-1", metadata=None, tray_tags=None):
         return await service.start_print(
             db,
             printer_id=1,
@@ -124,6 +131,7 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
             ams_mapping=ams_mapping,
             subtask_id=subtask_id,
             started_at=NOW,
+            tray_tags=tray_tags,
         )
 
     async def test_a_starting_print_resolves_its_spools(self):
@@ -154,6 +162,56 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record.estimated_seconds, 7412)
         self.assertEqual(record.object_count, 3)
         self.assertAlmostEqual(record.nozzle_diameter, 0.4)
+
+    async def test_a_slot_without_an_assignment_is_resolved_by_its_tag(self):
+        # FilaMan's Bambu Lab driver keeps a tray's type and colour but not its
+        # uuid, so nothing over there can match the tag to the spool carrying
+        # it. Without this every print would arrive with nothing assigned.
+        self.slots = {}
+        self.tags = {"841CCD522B68431BB6ED54893395307B": 25}
+
+        async with self.sessions() as db:
+            print_id = await self.start(
+                db, [0, 1], tray_tags={"0-0": "841CCD522B68431BB6ED54893395307B"}
+            )
+            rows = await store.list_filaments(db, print_id)
+
+        self.assertEqual([row.spool_id for row in rows], [25, None])
+
+    async def test_the_tag_is_matched_whatever_the_case(self):
+        # The printer reports upper case; what is stored is whatever the person
+        # who entered it typed.
+        self.tags = {"841ccd522b68431bb6ed54893395307b": 25}
+
+        async with self.sessions() as db:
+            print_id = await self.start(
+                db, [0], tray_tags={"0-0": "841CCD522B68431BB6ED54893395307B"}
+            )
+            rows = await store.list_filaments(db, print_id)
+
+        self.assertEqual(rows[0].spool_id, 25)
+
+    async def test_filamans_own_assignment_wins_over_the_tag(self):
+        # A person or the driver put that spool there. A tag read off a printer
+        # does not overrule it.
+        self.slots = {"0-0": 7}
+        self.tags = {"TAG": 25}
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0], tray_tags={"0-0": "TAG"})
+            rows = await store.list_filaments(db, print_id)
+
+        self.assertEqual(rows[0].spool_id, 7)
+
+    async def test_a_tag_nobody_carries_leaves_the_row_open(self):
+        # Not guessed at. The row waits for somebody to assign it.
+        self.tags = {"SOMETHING ELSE": 25}
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0], tray_tags={"0-0": "TAG"})
+            rows = await store.list_filaments(db, print_id)
+
+        self.assertIsNone(rows[0].spool_id)
 
     async def test_the_same_message_twice_creates_one_print(self):
         async with self.sessions() as db:

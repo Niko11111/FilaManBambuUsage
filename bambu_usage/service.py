@@ -90,6 +90,7 @@ async def start_print(
     subtask_id: str | None = None,
     started_at: datetime | None = None,
     status: str | None = None,
+    tray_tags: dict[str, str] | None = None,
 ) -> int:
     """Record a beginning print and return its id.
 
@@ -139,7 +140,7 @@ async def start_print(
     await store.add_filament_rows(
         db,
         print_id,
-        await _build_filament_rows(db, printer_id, metadata, ams_mapping),
+        await _build_filament_rows(db, printer_id, metadata, ams_mapping, tray_tags or {}),
     )
     await db.commit()
 
@@ -151,9 +152,10 @@ async def _build_filament_rows(
     printer_id: int,
     metadata: PrintMetadata,
     ams_mapping: list[Any],
+    tray_tags: dict[str, str],
 ) -> list[Any]:
     """Turn the 3MF filaments into table rows, resolving the spool for each."""
-    from . import filaman, store
+    from . import store
 
     slots = rules.resolve_slot_indexes(metadata.filaments, ams_mapping)
     rows = []
@@ -162,7 +164,7 @@ async def _build_filament_rows(
         slot_index = slots.get(filament.filament_id)
         spool_id = None
         if slot_index is not None:
-            spool_id = await filaman.resolve_spool_for_slot(db, printer_id, slot_index)
+            spool_id = await _resolve_spool(db, printer_id, slot_index, tray_tags)
 
         rows.append(
             store.FilamentRow(
@@ -178,6 +180,44 @@ async def _build_filament_rows(
         )
 
     return rows
+
+
+async def _resolve_spool(
+    db: AsyncSession,
+    printer_id: int,
+    slot_index: str,
+    tray_tags: dict[str, str],
+) -> int | None:
+    """Which spool sits in *slot_index*, asked twice in a deliberate order.
+
+    **FilaMan's own assignment wins.** A person or the driver put it there, and
+    a tag read off a printer does not overrule that.
+
+    Only where there is none does the RFID tag decide. FilaMan's Bambu Lab
+    driver keeps a tray's type and colour but not its uuid, so it cannot match
+    the tag against the spool that carries it, and without this every print
+    would arrive with nothing assigned. We read the tag for our own booking and
+    write nothing back, see docs/01_Design.md section 6.
+
+    None where neither answers, which is normal: the row stays open for somebody
+    to assign by hand rather than being guessed at.
+    """
+    from . import filaman
+
+    assigned = await filaman.resolve_spool_for_slot(db, printer_id, slot_index)
+    if assigned is not None:
+        return assigned
+
+    tag = tray_tags.get(slot_index)
+    if not tag:
+        return None
+
+    found = await filaman.find_spool_by_rfid(db, tag)
+    if found is not None:
+        logger.info(
+            "printer %s: slot %s resolved to spool %s by its tag", printer_id, slot_index, found
+        )
+    return found
 
 
 async def finish_print(

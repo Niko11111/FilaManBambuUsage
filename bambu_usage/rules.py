@@ -26,10 +26,25 @@ if TYPE_CHECKING:  # imported for annotations only
 # pair as the slot_index "255-254".
 EXTERNAL_SPOOL_AMS_ID = 255
 EXTERNAL_SPOOL_TRAY_ID = 254
-EXTERNAL_SLOT_INDEX = f"{EXTERNAL_SPOOL_AMS_ID}-{EXTERNAL_SPOOL_TRAY_ID}"
 
 # Trays are numbered globally across AMS units, four trays per unit.
 TRAYS_PER_AMS = 4
+
+
+def slot_index(ams_id: int, tray_id: int) -> str:
+    """The way FilaMan names one tray of one AMS.
+
+    The one place this format is written. Two callers build it from different
+    inputs and must not drift apart: tray_to_slot_index counts globally across
+    AMS units, while a report names the unit and the tray separately.
+
+    >>> slot_index(1, 1)
+    '1-1'
+    """
+    return f"{ams_id}-{tray_id}"
+
+
+EXTERNAL_SLOT_INDEX = slot_index(EXTERNAL_SPOOL_AMS_ID, EXTERNAL_SPOOL_TRAY_ID)
 
 
 def tray_to_slot_index(tray: int) -> str:
@@ -47,7 +62,7 @@ def tray_to_slot_index(tray: int) -> str:
     """
     if tray < 0:
         return EXTERNAL_SLOT_INDEX
-    return f"{tray // TRAYS_PER_AMS}-{tray % TRAYS_PER_AMS}"
+    return slot_index(tray // TRAYS_PER_AMS, tray % TRAYS_PER_AMS)
 
 
 def resolve_slot_indexes(
@@ -108,7 +123,7 @@ def should_spend(*, finished_normally: bool, auto_spend: bool, spend_on_cancel: 
     """Whether a print that just ended is booked automatically.
 
     Booking happens at the end and not at the start, so an aborted print does not
-    cost the full estimate. See docs/01_Design.md section 6.3.
+    cost the full estimate. See docs/01_Design.md section 6.4.
     """
     if not auto_spend:
         return False

@@ -20,8 +20,10 @@ is already set up in FilaMan.
   filament, the plate preview, and the **share of each filament used at every
   layer**, streamed out of the plate gcode
 - **Maps slicer slots to spools** through `ams_mapping` and FilaMan's own
-  `PrinterSlotAssignment`, and leaves anything it cannot resolve open rather
-  than guessing
+  `PrinterSlotAssignment`, and where there is no assignment, by the **RFID tag
+  of the tray**: the printer reports a uuid per tray, FilaMan keeps the same
+  value on the spool as `rfid_uid`. Anything that still cannot be resolved
+  stays open rather than guessed at
 - **Books through FilaMan's own `SpoolService`**, so the movement appears in the
   spool log like any other, with `source = bambu_usage`
 - **Deducts an aborted print at the share it actually reached**, taken from the
@@ -37,7 +39,7 @@ is already set up in FilaMan.
 
 ## Status
 
-**Version 0.7.7. It works, and it has booked a real print.**
+**Version 0.8.0. It works, and it has booked a real print.**
 
 Verified end to end on hardware: the print was detected, the 3MF fetched over
 FTPS, slicer filament 4 resolved to AMS slot 1-3 and from there to spool 25,
@@ -55,9 +57,11 @@ Written down plainly, because it is the first thing worth knowing:
 - **No spool change mid print**, as auto refill would cause. The code splits a
   filament row at the moment of the change and books both halves separately,
   and that path has only ever run in tests.
-- **No automatic assignment of the active AMS filaments.** In the one real run
-  the spool was linked by hand on the plugin's page. Whether FilaMan's slot
-  assignments resolve by themselves in everyday use is still open.
+- **Resolving a spool by its RFID tag has never run on hardware.** It exists
+  because FilaMan's Bambu Lab driver keeps a tray's type and colour but not its
+  `tray_uuid`, so nothing over there can match the tag against the spool that
+  carries it, and every print arrived with nothing assigned. Measured on a
+  running instance, then built; never yet seen resolving a real print.
 - **Local prints**, started from the printer's display or from SD, are not built
   at all yet.
 

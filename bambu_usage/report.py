@@ -42,6 +42,22 @@ TRANSITION_ENDED = "ended"
 # Where a report keeps the fields this plugin reads.
 PRINT_SECTION = "print"
 
+# Where the AMS state sits inside a report, and what one tray calls its tag.
+AMS_SECTION = "ams"
+TRAY_LIST = "tray"
+TRAY_UUID = "tray_uuid"
+EXTERNAL_TRAY_SECTION = "vt_tray"
+
+# The external holder has no unit of its own. These two say the same thing as
+# rules.EXTERNAL_SLOT_INDEX, and they are repeated here because this module may
+# not import rules. tests/test_report.py pins the two together.
+EXTERNAL_AMS_ID = 255
+EXTERNAL_TRAY_ID = 254
+
+# An empty tray, and a spool without a readable tag, report this. Looking it up
+# would hang every empty chamber on whichever spool happens to carry it.
+EMPTY_TRAY_UUID = "0" * 32
+
 
 @dataclass(frozen=True)
 class Transition:
@@ -49,6 +65,20 @@ class Transition:
 
     kind: str
     gcode_state: str | None = None
+
+
+@dataclass(frozen=True)
+class TrayTag:
+    """The RFID tag of one tray, as the printer reports it.
+
+    Built at the boundary like everything else here, so no raw report dict
+    travels deeper. The ids stay numbers; turning them into a slot_index is
+    rules.slot_index's job, and this module may not import it.
+    """
+
+    ams_id: int
+    tray_id: int
+    uuid: str
 
 
 @dataclass(frozen=True)
@@ -125,6 +155,76 @@ def detect_transition(previous: dict, current: dict) -> Transition | None:
         return Transition(TRANSITION_ENDED, gcode_state=after)
 
     return None
+
+
+def tray_tags(state: dict) -> list[TrayTag]:
+    """Every tray the printer says holds a spool with a readable tag.
+
+    This is what FilaMan's Bambu Lab driver drops on the floor: it keeps type,
+    colour and tray_info_idx of a tray, but not the uuid, so a spool carrying
+    that uuid can never be matched to the tray it sits in. Reading it here is
+    what lets a print resolve its spools without anybody assigning them.
+
+    Nothing is trusted to exist or to be a number. The report comes off a
+    printer, and a firmware update may rename or drop any of it.
+    """
+    section = state.get(PRINT_SECTION, {})
+    if not isinstance(section, dict):
+        return []
+
+    tags = []
+    for unit in _units(section):
+        ams_id = _to_int(unit.get("id"))
+        if ams_id is None:
+            continue
+        for tray in _trays(unit):
+            tag = _tag_of(tray)
+            tray_id = _to_int(tray.get("id"))
+            if tag is not None and tray_id is not None:
+                tags.append(TrayTag(ams_id=ams_id, tray_id=tray_id, uuid=tag))
+
+    external = section.get(EXTERNAL_TRAY_SECTION)
+    if isinstance(external, dict):
+        tag = _tag_of(external)
+        if tag is not None:
+            tags.append(TrayTag(ams_id=EXTERNAL_AMS_ID, tray_id=EXTERNAL_TRAY_ID, uuid=tag))
+
+    return tags
+
+
+def _units(section: dict) -> list[dict]:
+    """The AMS units of a report. The key nests twice, and may be missing."""
+    ams = section.get(AMS_SECTION)
+    if not isinstance(ams, dict):
+        return []
+
+    units = ams.get(AMS_SECTION)
+    return [unit for unit in units if isinstance(unit, dict)] if isinstance(units, list) else []
+
+
+def _trays(unit: dict) -> list[dict]:
+    trays = unit.get(TRAY_LIST)
+    return [tray for tray in trays if isinstance(tray, dict)] if isinstance(trays, list) else []
+
+
+def _tag_of(tray: dict) -> str | None:
+    """The uuid of one tray, or None where there is nothing worth looking up."""
+    value = tray.get(TRAY_UUID)
+    if not isinstance(value, str):
+        return None
+
+    uuid = value.strip()
+    if not uuid or uuid == EMPTY_TRAY_UUID:
+        return None
+    return uuid
+
+
+def _to_int(value: Any) -> int | None:
+    """Tray and unit ids arrive as strings. Anything unusable becomes None."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def describe_job(state: dict) -> PrintJob:

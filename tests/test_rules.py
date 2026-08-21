@@ -20,6 +20,7 @@ from bambu_usage.rules import (
     TRAYS_PER_AMS,
     resolve_slot_indexes,
     should_spend,
+    slot_index,
     split_share,
     sum_grams_per_spool,
     tray_to_slot_index,
@@ -249,6 +250,24 @@ class ShareAtLayerTest(unittest.TestCase):
         self.assertIsNone(share_at_layer([], 3))
         self.assertIsNone(share_at_layer(self.CURVE, None))
         self.assertIsNone(share_at_layer(self.CURVE, 0))
+
+
+class SlotIndexTest(unittest.TestCase):
+    """The one format for naming a tray, used by two callers with different
+    inputs: a global tray number, and a unit plus a tray from a report."""
+
+    def test_it_joins_unit_and_tray(self):
+        self.assertEqual(slot_index(1, 2), "1-2")
+
+    def test_the_global_numbering_agrees_with_it(self):
+        # Tray five is the second tray of the second unit.
+        self.assertEqual(tray_to_slot_index(5), slot_index(1, 1))
+
+    def test_the_external_holder_is_built_from_the_same_pair(self):
+        self.assertEqual(
+            EXTERNAL_SLOT_INDEX,
+            slot_index(EXTERNAL_SPOOL_AMS_ID, EXTERNAL_SPOOL_TRAY_ID),
+        )
 
 
 if __name__ == "__main__":

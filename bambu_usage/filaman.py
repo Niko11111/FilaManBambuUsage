@@ -351,6 +351,32 @@ async def load_currency(db: AsyncSession) -> str | None:
     return str(row.currency) if row is not None and row.currency else None
 
 
+async def find_spool_by_rfid(db: AsyncSession, uid: str) -> int | None:
+    """Which FilaMan spool carries the RFID tag *uid*, if any.
+
+    Bambu writes a uuid onto every spool tag, and FilaMan keeps it on the spool
+    as ``rfid_uid``. Matching the two is what lets a print find its spools when
+    no slot assignment exists, see docs/01_Design.md section 6.
+
+    Compared without regard to case: the printer reports upper case, and what is
+    stored is whatever the person who entered it typed. Returns None when the
+    tag belongs to nothing, which is normal rather than an error.
+    """
+    if not uid:
+        return None
+
+    (func, select) = _import_names("sqlalchemy", "func", "select")
+    (Spool,) = _import_names("app.models.spool", "Spool")
+
+    row = (
+        await db.execute(
+            select(Spool.id).where(func.lower(Spool.rfid_uid) == uid.strip().lower()).limit(1)
+        )
+    ).scalars().first()
+
+    return int(row) if row is not None else None
+
+
 async def load_spool_prices(db: AsyncSession, spool_ids: list[int]) -> dict[int, float]:
     """Return what one gram of filament costs, per spool.
 

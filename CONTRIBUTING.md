@@ -48,9 +48,17 @@ rejected.
 
 ## 3. Architecture decisions, settled
 
-- **Do not rebuild what FilaMan already has.** AMS overview, slot assignment,
-  RFID and auto matching belong to the Bambu Lab driver. This plugin **reads**
-  `PrinterSlot` and `PrinterSlotAssignment` and nothing more.
+- **Do not rebuild what FilaMan already has.** AMS overview, slot assignment
+  and auto matching belong to the Bambu Lab driver. This plugin **reads**
+  `PrinterSlot` and `PrinterSlotAssignment`.
+  - **One exception, and it was measured before it was taken.** The driver keeps
+    a tray's type, colour and `tray_info_idx`, but not its `tray_uuid`, so the
+    RFID tag a spool carries can never be matched against the tray it sits in,
+    and every print arrives with nothing assigned. This plugin therefore reads
+    the uuid out of the report it receives anyway and looks the spool up by
+    `rfid_uid`. **Only for its own booking:** FilaMan's assignment wins wherever
+    there is one, and nothing is ever written back into
+    `printer_slot_assignments`, which the driver owns and rewrites.
 - **Deduct through the internal service**, not through the Spoolman API:
   `SpoolService(db).record_consumption(...)`.
 - **An own MQTT connection per printer.** The Bambu Lab driver parses only

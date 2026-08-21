@@ -13,6 +13,8 @@ from __future__ import annotations
 import unittest
 
 from bambu_usage.report import (
+    EXTERNAL_AMS_ID,
+    EXTERNAL_TRAY_ID,
     PRINT_TYPE_CLOUD,
     PRINT_TYPE_LOCAL,
     STATE_FAILED,
@@ -31,7 +33,9 @@ from bambu_usage.report import (
     progress_of,
     remaining_minutes_of,
     total_layers_of,
+    tray_tags,
 )
+from bambu_usage.rules import EXTERNAL_SLOT_INDEX, slot_index
 
 
 def report(**fields):
@@ -237,6 +241,68 @@ class LiveFiguresTest(unittest.TestCase):
     def test_no_remaining_time(self):
         self.assertIsNone(remaining_minutes_of(report(gcode_state=STATE_RUNNING)))
         self.assertIsNone(remaining_minutes_of(report(mc_remaining_time="soon")))
+
+
+class TrayTagsTest(unittest.TestCase):
+    """What sits in which tray, read out of the AMS section of a report."""
+
+    def state(self, **print_section):
+        return {"print": print_section}
+
+    def ams(self, *trays, unit="0"):
+        return self.state(ams={"ams": [{"id": unit, "tray": list(trays)}]})
+
+    def test_reads_a_tag_out_of_a_tray(self):
+        tags = tray_tags(self.ams({"id": "1", "tray_uuid": "ABC123"}))
+
+        self.assertEqual([(t.ams_id, t.tray_id, t.uuid) for t in tags], [(0, 1, "ABC123")])
+
+    def test_an_empty_tray_carries_no_tag(self):
+        # Every empty chamber reports the same string of zeros. Looking it up
+        # would hang all of them on whichever spool happens to carry it.
+        tags = tray_tags(self.ams({"id": "0", "tray_uuid": "0" * 32}))
+
+        self.assertEqual(tags, [])
+
+    def test_the_external_holder_counts_too(self):
+        tags = tray_tags(self.state(vt_tray={"id": "254", "tray_uuid": "EXT"}))
+
+        self.assertEqual(len(tags), 1)
+        self.assertEqual(slot_index(tags[0].ams_id, tags[0].tray_id), EXTERNAL_SLOT_INDEX)
+
+    def test_the_external_ids_agree_with_the_rules(self):
+        # report.py may not import rules, so the pair is written down twice.
+        # This is what keeps the two copies from drifting apart.
+        self.assertEqual(slot_index(EXTERNAL_AMS_ID, EXTERNAL_TRAY_ID), EXTERNAL_SLOT_INDEX)
+
+    def test_a_second_unit_keeps_its_own_number(self):
+        state = {"print": {"ams": {"ams": [
+            {"id": "0", "tray": [{"id": "3", "tray_uuid": "FIRST"}]},
+            {"id": "1", "tray": [{"id": "0", "tray_uuid": "SECOND"}]},
+        ]}}}
+
+        tags = tray_tags(state)
+
+        self.assertEqual(
+            [slot_index(t.ams_id, t.tray_id) for t in tags], ["0-3", "1-0"]
+        )
+
+    def test_nothing_in_the_report_is_trusted(self):
+        # The report comes off a printer and a firmware update may rename or
+        # drop any of it. None of these may raise.
+        for state in (
+            {},
+            {"print": "not a section"},
+            {"print": {"ams": "not a dict"}},
+            {"print": {"ams": {"ams": "not a list"}}},
+            {"print": {"ams": {"ams": [{"tray": [{"id": "0", "tray_uuid": "X"}]}]}}},
+            {"print": {"ams": {"ams": [{"id": "0", "tray": "not a list"}]}}},
+            {"print": {"ams": {"ams": [{"id": "0", "tray": [{"tray_uuid": "X"}]}]}}},
+            {"print": {"ams": {"ams": [{"id": "0", "tray": [{"id": "0", "tray_uuid": 42}]}]}}},
+            {"print": {"vt_tray": "not a dict"}},
+        ):
+            with self.subTest(state=state):
+                self.assertEqual(tray_tags(state), [])
 
 
 if __name__ == "__main__":
