@@ -53,24 +53,41 @@ VALID_PLUGIN_TYPES = {"driver", "import", "integration"}
 PLUGIN_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,49}$")
 SEMVER_PATTERN = re.compile(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$")
 
+MAX_FILE_SIZE = 1 * 1024 * 1024
+
 # Never packed, regardless of extension.
 EXCLUDE_DIRS = {"__pycache__", ".git", ".idea", ".vscode"}
+
+# Files the operating system writes into the folder by itself. They are not
+# part of the package by any definition, and FilaMan rejects every hidden file,
+# so a Finder window on the package folder must not be able to break a build.
+# Anything else hidden is a mistake and fails validation, see
+# validate_hidden_files().
+EXCLUDE_FILES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 
 
 class ValidationError(Exception):
     """A packaging fault FilaMan would reject in exactly the same way."""
 
 
-def iter_plugin_files(plugin_dir: Path) -> list[Path]:
-    """Every file that goes into the package, in a stable order."""
+def iter_plugin_files(plugin_dir: Path) -> tuple[list[Path], list[Path]]:
+    """Every file that goes into the package, in a stable order.
+
+    Returns the files to pack and the operating system files left out, so the
+    build can name them rather than dropping them silently.
+    """
     files = []
+    dropped = []
     for path in sorted(plugin_dir.rglob("*")):
         if not path.is_file():
             continue
         if any(part in EXCLUDE_DIRS for part in path.relative_to(plugin_dir).parts):
             continue
+        if path.name in EXCLUDE_FILES:
+            dropped.append(path)
+            continue
         files.append(path)
-    return files
+    return files, dropped
 
 
 def validate_extensions(plugin_dir: Path, files: list[Path]) -> None:
@@ -89,6 +106,35 @@ def validate_extensions(plugin_dir: Path, files: list[Path]) -> None:
                 f"Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}. "
                 "Images and script files have to be served at runtime through the "
                 "router, see docs/01_Design.md section 8.1."
+            )
+
+
+def validate_hidden_files(plugin_dir: Path, files: list[Path]) -> None:
+    """No hidden file survives FilaMan's check, whatever its extension.
+
+    ``.DS_Store`` used to reach an upload this way and was refused there,
+    which is exactly the kind of surprise this script exists to prevent. The
+    operating system's own files are left out while packing, see
+    EXCLUDE_FILES; anything else hidden is somebody's decision and fails here.
+    """
+    for path in files:
+        if path.name.startswith("."):
+            rel = path.relative_to(plugin_dir)
+            raise ValidationError(
+                f"Hidden file not allowed: {rel}. FilaMan refuses the upload "
+                "with hidden_file."
+            )
+
+
+def validate_file_sizes(plugin_dir: Path, files: list[Path]) -> None:
+    """FilaMan's per file limit, which is far below the limit for the ZIP."""
+    for path in files:
+        size = path.stat().st_size
+        if size > MAX_FILE_SIZE:
+            rel = path.relative_to(plugin_dir)
+            raise ValidationError(
+                f"File too large: {rel} ({size} bytes), the limit for a single "
+                f"file is {MAX_FILE_SIZE}"
             )
 
 
@@ -167,22 +213,24 @@ def check_version_consistency(plugin_dir: Path, manifest: dict) -> None:
         )
 
 
-def validate(plugin_dir: Path) -> tuple[dict, list[Path]]:
-    """Run every check, returning the manifest and the file list."""
+def validate(plugin_dir: Path) -> tuple[dict, list[Path], list[Path]]:
+    """Run every check, returning the manifest, the file list and what was left out."""
     if not plugin_dir.is_dir():
         raise ValidationError(f"Plugin directory not found: {plugin_dir}")
 
     manifest = validate_manifest(plugin_dir)
     validate_structure(plugin_dir, manifest["plugin_type"])
 
-    files = iter_plugin_files(plugin_dir)
+    files, dropped = iter_plugin_files(plugin_dir)
     if not files:
         raise ValidationError("No files found to package")
 
     validate_extensions(plugin_dir, files)
+    validate_hidden_files(plugin_dir, files)
+    validate_file_sizes(plugin_dir, files)
     check_version_consistency(plugin_dir, manifest)
 
-    return manifest, files
+    return manifest, files, dropped
 
 
 def build(
@@ -243,10 +291,33 @@ def selftest() -> int:
             print(f"FAILED: a clean package was rejected: {exc}")
             return 1
 
+        # The operating system's own file must not reach the ZIP, and must not
+        # break the build either. This is what a Finder window leaves behind.
+        (staged / ".DS_Store").write_bytes(b"\x00\x00\x01Bud1")
+        manifest, files, dropped = validate(staged)
+        if [path.name for path in dropped] != [".DS_Store"]:
+            print("FAILED: .DS_Store should have been left out of the package")
+            return 1
+        if any(path.name == ".DS_Store" for path in files):
+            print("FAILED: .DS_Store should not be among the packed files")
+            return 1
+
+        # Any other hidden file is somebody's decision and has to be refused,
+        # because FilaMan refuses it at the upload.
+        (staged / ".env").write_text("SECRET=1\n", encoding="utf-8")
+        try:
+            validate(staged)
+        except ValidationError:
+            pass
+        else:
+            print("FAILED: a hidden .env should have been rejected")
+            return 1
+        (staged / ".env").unlink()
+
         # Building the same version twice has to be refused. Two different
         # packages under one version number is what makes an installed plugin
         # and the version it reports disagree, with nothing visible from outside.
-        manifest, files = validate(staged)
+        manifest, files, _ = validate(staged)
         sandbox = Path(tmp) / "dist"
         build(staged, manifest, files, dist_dir=sandbox)
         try:
@@ -267,6 +338,8 @@ def selftest() -> int:
         except ValidationError as exc:
             print("Self test passed.")
             print("  clean package             accepted")
+            print("  .DS_Store                 left out, build unaffected")
+            print("  package with .env         rejected as a hidden file")
             print("  same version twice        refused, --force accepted")
             print(f"  package with preview.png  rejected: {str(exc).splitlines()[0]}")
             return 0
@@ -290,13 +363,15 @@ def main() -> int:
         return selftest()
 
     try:
-        manifest, files = validate(PLUGIN_DIR)
+        manifest, files, dropped = validate(PLUGIN_DIR)
     except ValidationError as exc:
         print(f"Validation failed: {exc}", file=sys.stderr)
         return 1
 
     print(f"{manifest['name']} {manifest['version']} ({manifest['plugin_key']}, {manifest['plugin_type']})")
     print(f"  {len(files)} files checked, every extension allowed")
+    for path in dropped:
+        print(f"  left out, the operating system wrote it: {path.relative_to(PLUGIN_DIR)}")
 
     if args.check:
         print("  validation only, nothing written")

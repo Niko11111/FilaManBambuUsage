@@ -34,6 +34,10 @@ is already set up in FilaMan.
   spool (which moves the booking with it), correct an amount, delete an entry
 - **Warns while a print runs** when the assigned spool does not hold enough for
   what is left to print
+- **Keeps FilaMan's navigation** while the page is open: FilaMan serves a plugin
+  page outside its own interface, so the page borrows the shell at runtime
+  rather than carrying a copy of it. Where that is not possible, it falls back
+  to standing on its own with a link back
 
 ![Choosing a spool, with what the print still needs](docs/images/spool-picker.jpg)
 
@@ -149,8 +153,8 @@ python3 tools/check_architecture.py          # module boundaries hold
 python3 -m unittest discover -s tests -t .   # unit tests, stdlib only
 ```
 
-The build mirrors FilaMan's own checks: extension allow list, size limit,
-required files, manifest schema. What passes here is accepted by FilaMan.
+The build mirrors FilaMan's own checks: extension allow list, size limits, no
+hidden files, required files, manifest schema. What passes here is accepted by FilaMan.
 Building the same version twice is refused, because a version number has to
 describe exactly one package.
 

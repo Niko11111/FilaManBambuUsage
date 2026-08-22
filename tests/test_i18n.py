@@ -16,8 +16,10 @@ from ._support import LOCALES_DIR, PACKAGE_DIR, PAGE_HTML, REFERENCE_LANGUAGE, f
 # Interpolation placeholders, matching FilaMan's own {name} syntax.
 PLACEHOLDER_PATTERN = re.compile(r"\{([a-zA-Z0-9_]+)\}")
 
-# data-i18n, data-i18n-placeholder and data-i18n-title in the page.
-HTML_KEY_PATTERN = re.compile(r'data-i18n(?:-placeholder|-title)?="([^"]+)"')
+# data-bambu-i18n, data-bambu-i18n-placeholder and data-bambu-i18n-title in
+# the page. The attribute carries the plugin's name because FilaMan's own
+# layout script translates every plain data-i18n it can reach.
+HTML_KEY_PATTERN = re.compile(r'data-bambu-i18n(?:-placeholder|-title)?="([^"]+)"')
 
 # Quoted dotted keys anywhere in the page script. Matching the t( call itself
 # would miss the ternary form t(flag ? 'a.b' : 'c.d'), which is exactly the sort
@@ -130,15 +132,24 @@ class UsageTest(unittest.TestCase):
         # A key can be spelled right, exist in every language and still never
         # reach the page, because translatePage only looks at the attributes it
         # knows. That is how the search box shipped without a placeholder.
-        marked = set(re.findall(r"data-i18n(-[a-z]+)?=", self.html))
-        handled = set(re.findall(r"querySelectorAll\('\[data-i18n(-[a-z]+)?\]'\)", self.html))
+        marked = set(re.findall(r"data-bambu-i18n(-[a-z]+)?=", self.html))
+        handled = set(
+            re.findall(r"querySelectorAll\('\[data-bambu-i18n(-[a-z]+)?\]'\)", self.html)
+        )
         self.assertEqual(marked - handled, set())
 
+    def test_the_page_uses_no_plain_i18n_attribute(self):
+        # FilaMan's layout script runs on this page once the shell is borrowed,
+        # and its translatePage() overwrites every [data-i18n] with its own
+        # dictionary, which does not know our keys. A plain attribute would
+        # therefore leave the key itself standing in the interface.
+        self.assertNotIn("data-i18n", self.html)
+
     def test_the_page_carries_no_hardcoded_sentences(self):
-        # A data-i18n element must not also hold literal prose, or the two
+        # A data-bambu-i18n element must not also hold literal prose, or the two
         # disagree the moment a translation changes. If the dictionary fails to
         # load, t() falls back to showing the key, so nothing goes blank.
-        for match in re.finditer(r'data-i18n="([^"]+)"[^>]*>([^<]*)<', self.html):
+        for match in re.finditer(r'data-bambu-i18n="([^"]+)"[^>]*>([^<]*)<', self.html):
             key, literal = match.group(1), match.group(2).strip()
             with self.subTest(key=key):
                 self.assertEqual(literal, "", f"{key} also holds literal text")

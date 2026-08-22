@@ -13,7 +13,159 @@
       document.documentElement.setAttribute('data-theme', t);
     })();
   </script>
-  <style>
+
+  <script>
+    /* Borrows FilaMan's own shell so the navigation drawer stays on this page.
+
+       FilaMan serves a plugin page raw, outside its interface: the entry in the
+       sidebar links straight at page_url and the backend answers with this
+       file. Rebuilding the drawer here would mean carrying a copy of somebody
+       else's interface and re-copying it after every FilaMan release, so the
+       page borrows instead: it fetches FilaMan's own start page, lifts the
+       drawer, the stylesheet and the layout script out of it and hangs its own
+       content into the shell's main element. Nothing is copied into this
+       repository, and the drawer is whatever FilaMan renders today.
+
+       Every step is guarded. If any piece is missing, because a FilaMan release
+       renamed it or the request failed, the page stays exactly as it is without
+       the shell, which is how it has always looked. See docs/01_Design.md
+       section 8.3. */
+    (function () {
+      // Somebody else's shell may already be around this page: FilaMan could
+      // one day open a plugin page in a frame of its own. A second drawer
+      // inside the first is worse than none, so nothing is borrowed then, and
+      // the way back is left to the interface that already has one.
+      if (window.self !== window.top) {
+        document.documentElement.classList.add('in-fm-frame');
+        return;
+      }
+
+      // What the shell is made of, in FilaMan's own names. Read out of
+      // frontend/src/layouts/Layout.astro.
+      var SHELL_SOURCE = '/';
+      var SHELL_SELECTOR = '#fm-page';
+      var SIDEBAR_SELECTOR = 'aside.fm-sidebar';
+      var MAIN_SELECTOR = 'main';
+      var MODAL_SELECTOR = '#fm-confirm-overlay';
+      var STYLESHEET_SELECTOR = 'link[rel="stylesheet"][href^="/_astro/"]';
+      var LAYOUT_SCRIPT_SELECTOR = 'script[type="module"][src*="Layout.astro"]';
+      var SHELL_CLASS = 'has-fm-shell';
+      var COLLAPSED_KEY = 'sidebar-collapsed';
+      var COLLAPSED_CLASS = 'sidebar-collapsed';
+      var NARROW_WINDOW_PX = 768;
+      var CONTENT_SELECTOR = '.page-content';
+      var OWN_STYLE_ID = 'bambu-usage-style';
+
+      function fetchShellDocument() {
+        return fetch(SHELL_SOURCE, { credentials: 'include' }).then(function (response) {
+          if (!response.ok) throw new Error('shell request answered ' + response.status);
+          return response.text();
+        }).then(function (html) {
+          return new DOMParser().parseFromString(html, 'text/html');
+        });
+      }
+
+      // The shell is only usable whole. Half a drawer is worse than none.
+      function shellFrom(shellDocument) {
+        var shell = shellDocument.querySelector(SHELL_SELECTOR);
+        if (!shell) return null;
+        if (!shell.querySelector(SIDEBAR_SELECTOR)) return null;
+        if (!shell.querySelector(MAIN_SELECTOR)) return null;
+        return shell;
+      }
+
+      // The file name carries a build hash, so it is read out of the document
+      // every time and never written down here. It goes in front of this page's
+      // own style block on purpose: FilaMan's rules are the ground the drawer
+      // stands on, ours are what this page looks like, and ours win the ties.
+      function adoptStylesheets(shellDocument) {
+        var own = document.getElementById(OWN_STYLE_ID);
+        shellDocument.querySelectorAll(STYLESHEET_SELECTOR).forEach(function (source) {
+          var link = document.createElement('link');
+          link.rel = 'stylesheet';
+          link.href = source.getAttribute('href');
+          if (own) document.head.insertBefore(link, own);
+          else document.head.appendChild(link);
+        });
+      }
+
+      // A script that arrives with a copied node must not run on its own, and
+      // the start page's own scripts are not wanted here at all.
+      function withoutScripts(node) {
+        node.querySelectorAll('script').forEach(function (script) { script.remove(); });
+        return node;
+      }
+
+      function adopt(shellDocument, selector) {
+        var source = shellDocument.querySelector(selector);
+        return source ? withoutScripts(document.importNode(source, true)) : null;
+      }
+
+      // Mirrors the inline script in Layout.astro, which runs before first
+      // paint. Without it the drawer starts open on a phone.
+      function restoreDrawerState() {
+        var collapsed = localStorage.getItem(COLLAPSED_KEY) === 'true'
+          || window.innerWidth <= NARROW_WINDOW_PX;
+        if (collapsed) document.documentElement.classList.add(COLLAPSED_CLASS);
+      }
+
+      // The layout script brings the drawer to life: language, the check for a
+      // session, the plugin list, the active entry, the theme buttons, the
+      // collapse toggle and logging out.
+      function runLayoutScript(shellDocument) {
+        var source = shellDocument.querySelector(LAYOUT_SCRIPT_SELECTOR);
+        if (!source) return;
+        var script = document.createElement('script');
+        script.type = 'module';
+        script.src = source.getAttribute('src');
+        document.body.appendChild(script);
+      }
+
+      function mountShell(shellDocument) {
+        var shell = shellFrom(shellDocument);
+        var content = document.querySelector(CONTENT_SELECTOR);
+        if (!shell || !content) return;
+
+        var mounted = withoutScripts(document.importNode(shell, true));
+        var main = mounted.querySelector(MAIN_SELECTOR);
+        main.replaceChildren();
+
+        adoptStylesheets(shellDocument);
+        restoreDrawerState();
+        document.body.insertBefore(mounted, document.body.firstChild);
+        // Moved, not rebuilt, so the handlers already on it stay attached.
+        main.appendChild(content);
+
+        var modal = adopt(shellDocument, MODAL_SELECTOR);
+        if (modal) document.body.appendChild(modal);
+
+        // FilaMan reveals the shell once its own check for a session comes
+        // back. This page does not hang its visibility on somebody else's code.
+        mounted.style.visibility = 'visible';
+        document.body.classList.add(SHELL_CLASS);
+        runLayoutScript(shellDocument);
+      }
+
+      // Started here rather than after the body, so the request travels while
+      // the rest of the page is still being parsed.
+      var pending = fetchShellDocument().catch(function () { return null; });
+
+      function mountWhenParsed() {
+        pending.then(function (shellDocument) {
+          if (shellDocument) mountShell(shellDocument);
+        }).catch(function () {
+          // The page stands on its own. It always has.
+        });
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', mountWhenParsed);
+      } else {
+        mountWhenParsed();
+      }
+    })();
+  </script>
+  <style id="bambu-usage-style">
     /* Token names and values mirror FilaMan so the page belongs to the app.
        Everything is inline because the plugin ZIP rejects .css and .js files. */
     :root {
@@ -77,10 +229,16 @@
        stays a readable length. */
     .page-content { max-width: min(1400px, 100%); margin: 0 auto; padding: 32px 24px 64px; }
 
-    /* FilaMan serves this page outside its own shell, so the navigation drawer
-       is not there. Until FilaMan can embed a plugin page, this is the way
-       back, and it looks like a button because a muted line of text is not
-       something anybody finds. See docs/01_Design.md section 8.1. */
+    /* Set once the borrowed shell stands. FilaMan's own main element already
+       brings the padding, and the drawer replaces the way back. */
+    .has-fm-shell .page-content { padding: 0; }
+    .has-fm-shell .back-link,
+    .in-fm-frame .back-link { display: none; }
+
+    /* The way back for the case where the drawer could not be borrowed. It
+       looks like a button because a muted line of text is not something
+       anybody finds. With the drawer in place it is one exit too many, so the
+       shell hides it. See docs/01_Design.md section 8.1. */
     .back-link {
       display: inline-flex;
       align-items: center;
@@ -95,7 +253,7 @@
       font-weight: 600;
       transition: color var(--transition), border-color var(--transition);
     }
-    /* The arrow is a pseudo element on purpose: data-i18n replaces the text
+    /* The arrow is a pseudo element on purpose: data-bambu-i18n replaces the text
        content of the link, and a child element would be wiped with it. */
     .back-link::before { content: "\2190"; font-size: 1rem; line-height: 1; }
     .back-link:hover {
@@ -599,22 +757,22 @@
 <body>
   <div class="page-content">
 
-    <a class="back-link" href="/" data-i18n="page.back"></a>
+    <a class="back-link" href="/" target="_top" data-bambu-i18n="page.back"></a>
 
     <div class="hero">
-      <h1 data-i18n="page.title"></h1>
-      <p data-i18n="page.subtitle"></p>
+      <h1 data-bambu-i18n="page.title"></h1>
+      <p data-bambu-i18n="page.subtitle"></p>
     </div>
 
-      <div id="needs-restart" class="message" data-i18n="status.needsRestart" hidden></div>
+      <div id="needs-restart" class="message" data-bambu-i18n="status.needsRestart" hidden></div>
   <div id="message" class="message" hidden></div>
 
     <section class="fm-card">
       <div class="card-head">
-        <h2 class="fm-card-header" data-i18n="status.heading"></h2>
+        <h2 class="fm-card-header" data-bambu-i18n="status.heading"></h2>
         <span class="pill">
           <span class="dot" id="health-dot"></span>
-          <span id="health-label" data-i18n="status.checking"></span>
+          <span id="health-label" data-bambu-i18n="status.checking"></span>
           <span id="health-version"></span>
         </span>
       </div>
@@ -622,63 +780,63 @@
     </section>
 
     <section class="fm-card running-card" id="running-card" hidden>
-      <h2 class="fm-card-header" data-i18n="history.running"></h2>
+      <h2 class="fm-card-header" data-bambu-i18n="history.running"></h2>
       <div id="running"></div>
     </section>
 
     <section class="fm-card">
-      <h2 class="fm-card-header" data-i18n="history.heading"></h2>
+      <h2 class="fm-card-header" data-bambu-i18n="history.heading"></h2>
 
       <div class="filters">
         <label class="search">
-          <input type="text" id="history-search" data-i18n-placeholder="history.search" />
+          <input type="text" id="history-search" data-bambu-i18n-placeholder="history.search" />
         </label>
         <label class="check">
           <input type="checkbox" id="history-hide-failed" />
-          <span data-i18n="history.hideFailed"></span>
+          <span data-bambu-i18n="history.hideFailed"></span>
         </label>
         <select id="history-printer"></select>
         <select id="history-order">
-          <option value="newest" data-i18n="history.orderNewest"></option>
-          <option value="oldest" data-i18n="history.orderOldest"></option>
-          <option value="largest" data-i18n="history.orderLargest"></option>
+          <option value="newest" data-bambu-i18n="history.orderNewest"></option>
+          <option value="oldest" data-bambu-i18n="history.orderOldest"></option>
+          <option value="largest" data-bambu-i18n="history.orderLargest"></option>
         </select>
       </div>
 
       <div id="history"></div>
-      <button type="button" id="load-more" class="button ghost" data-i18n="history.loadMore" hidden></button>
+      <button type="button" id="load-more" class="button ghost" data-bambu-i18n="history.loadMore" hidden></button>
     </section>
 
     <section class="fm-card">
-      <h2 class="fm-card-header" data-i18n="settings.heading"></h2>
+      <h2 class="fm-card-header" data-bambu-i18n="settings.heading"></h2>
       <form id="settings-form">
         <div class="field">
-          <span data-i18n="settings.scope"></span>
+          <span data-bambu-i18n="settings.scope"></span>
           <select id="settings-scope"></select>
         </div>
         <label class="check">
           <input type="checkbox" id="tracking-enabled" />
-          <span data-i18n="settings.tracking"></span>
+          <span data-bambu-i18n="settings.tracking"></span>
         </label>
         <label class="check">
           <input type="checkbox" id="auto-spend" />
-          <span data-i18n="settings.autoSpend"></span>
+          <span data-bambu-i18n="settings.autoSpend"></span>
         </label>
         <label class="check">
           <input type="checkbox" id="spend-on-cancel" />
-          <span data-i18n="settings.spendOnCancel"></span>
+          <span data-bambu-i18n="settings.spendOnCancel"></span>
         </label>
         <div class="field">
-          <span data-i18n="settings.retention"></span>
+          <span data-bambu-i18n="settings.retention"></span>
           <input type="number" id="retention" min="0" step="1" />
         </div>
-        <p class="hint" data-i18n="settings.retentionHint"></p>
-        <button type="submit" class="button" data-i18n="settings.save"></button>
-        <span id="settings-saved" class="saved" data-i18n="settings.saved" hidden></span>
+        <p class="hint" data-bambu-i18n="settings.retentionHint"></p>
+        <button type="submit" class="button" data-bambu-i18n="settings.save"></button>
+        <span id="settings-saved" class="saved" data-bambu-i18n="settings.saved" hidden></span>
       </form>
     </section>
 
-    <footer data-i18n="page.footer"></footer>
+    <footer data-bambu-i18n="page.footer"></footer>
   </div>
 
   <!-- The icon set. Inline, because the plugin ZIP rejects .svg files, and as
@@ -810,15 +968,20 @@
         });
       }
 
+      // The attribute carries the plugin's name for a reason. FilaMan's own
+      // translatePage() overwrites the text of every element marked with its
+      // plain attribute, and its t() returns the key itself when its dictionary
+      // does not know it. Since the layout script runs on this page as well, a
+      // shared attribute would leave "history.heading" in our headings.
       function translatePage() {
-        document.querySelectorAll('[data-i18n]').forEach(function (element) {
-          element.textContent = t(element.getAttribute('data-i18n'));
+        document.querySelectorAll('[data-bambu-i18n]').forEach(function (element) {
+          element.textContent = t(element.getAttribute('data-bambu-i18n'));
         });
-        document.querySelectorAll('[data-i18n-title]').forEach(function (element) {
-          element.title = t(element.getAttribute('data-i18n-title'));
+        document.querySelectorAll('[data-bambu-i18n-title]').forEach(function (element) {
+          element.title = t(element.getAttribute('data-bambu-i18n-title'));
         });
-        document.querySelectorAll('[data-i18n-placeholder]').forEach(function (element) {
-          element.placeholder = t(element.getAttribute('data-i18n-placeholder'));
+        document.querySelectorAll('[data-bambu-i18n-placeholder]').forEach(function (element) {
+          element.placeholder = t(element.getAttribute('data-bambu-i18n-placeholder'));
         });
       }
 

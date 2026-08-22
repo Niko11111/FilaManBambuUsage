@@ -464,6 +464,56 @@ this plugin simply reads the result. See CONTRIBUTING.md section 3.
 The column stays in `bambu_usage_settings`, because nothing in this schema is
 ever dropped, and it is marked as abandoned there.
 
+### 8.3 The borrowed shell
+
+FilaMan serves a plugin page raw. `show_in_nav: true` in the manifest puts an
+entry into FilaMan's own drawer (`GET /api/v1/plugin-nav`, rendered by
+`loadPluginNav()` in `Layout.astro`, there since FilaMan 1.1.6), but that entry
+links straight at `page_url` and `serve_plugin_page()` answers with
+`FileResponse(page.html)`. The browser leaves the Astro shell, so the drawer is
+gone for as long as the page is open. The one plugin page that keeps it is the
+built-in FilamentDB import, whose `page_url` points at an Astro page of
+FilaMan's own. The frontend is a static build, so a plugin cannot bring one.
+
+Rebuilding the drawer here would mean carrying a copy of somebody else's
+interface and re-copying it after every FilaMan release. The page borrows it at
+runtime instead:
+
+1. it fetches FilaMan's own start page,
+2. lifts `#fm-page` (the drawer and `main`), the `/_astro/` stylesheet and the
+   layout module out of it,
+3. moves its own `.page-content` into `main`, rather than rebuilding it, so the
+   handlers already on it stay attached,
+4. and lets FilaMan's layout module do the rest: language, the check for a
+   session, the plugin list, the active entry, the theme buttons, collapsing and
+   logging out.
+
+Nothing is copied into this repository. What it depends on are FilaMan's own
+names, `#fm-page`, `aside.fm-sidebar`, `main` and `#fm-confirm-overlay`, and
+each one is a guard rather than an assumption: if a release renames one, or the
+request fails, the page stays exactly as it always looked, with the way back as
+a button at the top. **That fallback is what makes borrowing acceptable at all.
+The worst case is the state of yesterday, not a broken page.**
+
+It also stands down when the page is not the top window. If FilaMan opens a
+plugin page in a frame of its own one day, which is what section 10 proposes,
+the shell is already there and a second drawer inside the first would be worse
+than none.
+
+Two consequences are worth writing down:
+
+- **The page's translation attribute carries the plugin's name**,
+  `data-bambu-i18n`. FilaMan's `translatePage()` overwrites the text of every
+  element marked with its own plain attribute, and its `t()` returns the key
+  itself when its dictionary does not know it. A shared attribute would leave
+  `history.heading` standing in our headings. `tests/test_i18n.py` holds the
+  plain attribute out.
+- **The borrowed stylesheet is placed in front of this page's own style block.**
+  FilaMan's rules are the ground the drawer stands on, ours decide what the page
+  looks like, and ours win the ties.
+
+The clean answer still lies upstream, see section 10.
+
 ## 9. Languages
 
 English is the reference language. Further languages can be added without
@@ -484,6 +534,18 @@ We mirror FilaMan's own contract, taken from `frontend/src/lib/i18n.ts`:
 
 Because we use the same contract, **the plugin page follows whatever language
 the user selected in FilaMan.** No separate switch, no second setting.
+
+**Dates and times are not part of that contract.** They are rendered through
+`toLocaleString` and its siblings with no locale argument, so the browser
+decides the format, not the selected interface language. An English interface
+in a German browser therefore still shows `21.08.2026, 20:53`.
+
+That is deliberate. FilaMan's own spool table renders `last_used_at` the same
+way, without a locale, and neither `de-DE` nor `navigator.language` appears
+anywhere in its frontend bundles. Deriving the format from
+`localStorage['lang']` would make this page disagree with the table right next
+to it, and two date formats in one interface is the worse of the two states.
+The day FilaMan takes a position on this, we follow it.
 
 ```
 bambu_usage/locales/en.json      reference, always complete
@@ -529,10 +591,15 @@ a spool swapped mid print. What is still missing from the counterpart to
 3. Whether a plugin page could be rendered inside FilaMan's own shell, so the
    navigation drawer stays visible. Today the navigation links straight at
    `page_url` and the backend returns `page.html` raw, which means a plugin page
-   takes over the whole window. The clean fix is a route in the frontend that
-   embeds the page in `Layout.astro`; the alternative, rebuilding the drawer
-   inside `page.html`, would duplicate somebody else's interface and rot with
-   every FilaMan release. Until then the page carries a link back.
+   takes over the whole window. Section 8.3 describes what this page does about
+   it, which is to borrow the shell at runtime. That works, but it lives off
+   FilaMan's DOM staying as it is. The clean fix is one static page in the
+   frontend that renders `Layout.astro` around an iframe of
+   `/plugin-page/<slug>`, plus the line in `loadPluginNav()` that links there.
+   FilaMan already allows the embedding (`allow_iframe_embedding` in
+   `app/main.py`), every plugin would gain the drawer, and nothing in this
+   plugin would have to change. Offered as a pull request, the borrowed shell
+   comes out again the day it lands.
 
 ## 11. Module layout
 

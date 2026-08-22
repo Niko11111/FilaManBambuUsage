@@ -33,6 +33,7 @@ re-read against the source on 2026-08-20, the rest on 2026-08-18.
 | Claim | Location |
 |---|---|
 | ZIP allow list without image formats, 10 MB limit | `app/services/plugin_service.py`, `ALLOWED_EXTENSIONS`, `MAX_ZIP_SIZE` |
+| 1 MB per single file, and no hidden file at all | `app/services/plugin_service.py`, `_validate_contents()`, error codes `file_too_large` and `hidden_file` |
 | Required manifest fields, required files | `app/services/plugin_service.py`, `REQUIRED_MANIFEST_FIELDS`, `_validate_structure()` |
 | `plugin_type` is `driver`, `import`, `integration` | `app/services/plugin_service.py`, `VALID_PLUGIN_TYPES` |
 | `plugin_key` regex, semver | `app/services/plugin_service.py`, `PLUGIN_KEY_PATTERN`, `SEMVER_PATTERN` |
@@ -53,6 +54,11 @@ re-read against the source on 2026-08-20, the rest on 2026-08-18.
 | SQLite runs with `PRAGMA foreign_keys=ON`, so declared cascades fire | `app/core/database.py`, `_set_sqlite_pragmas()` |
 | `record_consumption(spool, delta_weight_g, event_at, principal=None, source="ui", note=None)` | `app/services/spool_service.py` |
 | The page is resolved at request time | `app/main.py`, `@app.get("/plugin-page/{plugin_slug:path}")` |
+| `show_in_nav` only lists the plugin in the drawer | `app/api/v1/system.py`, `plugin_nav()`; `frontend/src/layouts/Layout.astro`, `loadPluginNav()`; in FilaMan since 1.1.6, `frontend/src/changelog.json` |
+| The frontend is a static build, so a plugin cannot add a page to it | `frontend/astro.config.mjs`, `BUILD_MODE`; `nginx.conf`, `root /app/static` with `try_files` |
+| The shell is `#fm-page` with `aside.fm-sidebar` and `main`, plus `#fm-confirm-overlay` and the layout module next to it | `frontend/src/layouts/Layout.astro`; re-read against the running instance on 2026-08-22 |
+| FilaMan translates every element carrying its own `data-i18n` and falls back to showing the key | `frontend/src/lib/i18n.ts`, `translatePage()` and `t()` |
+| Embedding a FilaMan page in an iframe is already allowed | `app/main.py`, `allow_iframe_embedding` |
 | Only drivers get a lifecycle | `app/main.py`, `plugin_manager.start_all()`; `app/plugins/manager.py`, `start_printer()` |
 | Several workers, startup guarded by an exclusive `fcntl.flock`, with watchdog takeover | `app/main.py`, `_STARTUP_LOCK_PATH`, `lifespan()`, `_watchdog_try_takeover()` |
 | The `BaseDriver` interface | `app/plugins/base.py` |

@@ -39,7 +39,10 @@ rejected.
   why `page.html` is a single file with inline `<style>` and `<script>`, why the
   icons are inline `<template>` elements, and why images only ever leave through
   a route at runtime. Translations do ship, because `.json` is allowed.
-- Maximum ZIP size is 10 MB.
+- Maximum ZIP size is 10 MB, and **1 MB for a single file**.
+- **No hidden files.** A `.DS_Store` from a Finder window is enough to have the
+  upload refused. `build_zip.py` leaves those out while packing and names them
+  in its output; every other hidden file fails the build.
 - Required files: `plugin.json` and `__init__.py`.
 - `plugin_key` must match `^[a-z][a-z0-9_]{2,49}$`, `version` must be semver.
 - An integration plugin gets **no `start` / `stop` lifecycle**. Only drivers do,

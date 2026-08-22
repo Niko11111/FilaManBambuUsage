@@ -14,9 +14,16 @@ Plugins are uploaded as a ZIP through Admin, Plugins.
 
 1. **Size:** `MAX_ZIP_SIZE = 10 * 1024 * 1024`, so 10 MB.
 2. **ZIP integrity.**
-3. **Extension allow list**, `ALLOWED_EXTENSIONS`:
-   `.py .json .md .txt .cfg .ini .yaml .yml .toml .html`
-   Anything else fails with `forbidden_extension`.
+3. **Per file, walking the extracted tree**, in this order:
+   - **Extension allow list**, `ALLOWED_EXTENSIONS`:
+     `.py .json .md .txt .cfg .ini .yaml .yml .toml .html`
+     Anything else fails with `forbidden_extension`. A file without any
+     extension passes, the check reads `if suffix and suffix not in ...`.
+   - **1 MB per file**, `file_too_large`. Far below the 10 MB for the ZIP.
+   - **No hidden file**, meaning no name starting with a dot, `hidden_file`.
+     A `.DS_Store` that macOS wrote into the package folder is enough to have
+     an upload refused, which is why `tools/build_zip.py` leaves the operating
+     system's own files out while packing.
 4. **Manifest** `plugin.json`, required fields
    `plugin_key`, `name`, `version`, `description`, `author`.
 5. **Structure:** `plugin.json` and `__init__.py` are mandatory, plus
@@ -67,7 +74,7 @@ Fields the installer evaluates:
 | `mount_prefix` | no | prefix the router is mounted under |
 | `config_schema` | no | JSON Schema, FilaMan renders a form from it |
 | `capabilities` | no | free form object describing what the plugin can do |
-| `show_in_nav` | no | show an entry in the navigation, defaults to `false` |
+| `show_in_nav` | no | list the plugin in FilaMan's own navigation drawer, defaults to `false`. It adds the entry, nothing else, see section 3 |
 | `dependencies` | no | list of pip requirements |
 | `printer_params` | no | extra per printer fields, only meaningful for drivers |
 
@@ -93,14 +100,24 @@ Because the page is served by FilaMan and not by the plugin, **the plugin
 cannot template it**. Anything dynamic, translations included, has to be
 fetched by the page at runtime from the plugin's own router.
 
-**A plugin page is not embedded into FilaMan's interface.** `Layout.astro`
-renders the navigation entry as `a.href = p.page_url`, a plain link, and
-`serve_plugin_page()` answers with `FileResponse(page.html)`. The browser
-therefore leaves the Astro shell, and the navigation drawer is gone for as long
-as a plugin page is open. Rebuilding that drawer inside `page.html` would mean
-carrying a copy of somebody else's interface and re-copying it after every
-FilaMan release, so this plugin carries a link back instead and takes the
-question upstream. See `01_Design.md` section 10.
+**`show_in_nav` gets the plugin into the drawer, not the drawer onto the
+plugin page.** `GET /api/v1/plugin-nav` (`app/api/v1/system.py`) returns the
+active plugins that carry a `page_url` and have the flag set, cached for 600
+seconds and invalidated whenever a plugin is installed, updated, toggled or
+removed. `loadPluginNav()` in `frontend/src/layouts/Layout.astro` appends them
+under a "Plugins" heading as `a.href = p.page_url`, a plain link. In FilaMan
+since 1.1.6.
+
+**A plugin page is still not embedded into FilaMan's interface.**
+`serve_plugin_page()` answers with `FileResponse(page.html)`, so the browser
+leaves the Astro shell and the drawer is gone for as long as the page is open.
+The only plugin page that keeps it is the built-in FilamentDB import, whose
+`page_url` is `/admin/system/filamentdb-import`, an Astro page of FilaMan's own.
+No plugin can bring one: `frontend/astro.config.mjs` builds statically and nginx
+serves the result from `/app/static`.
+
+This plugin borrows the shell at runtime rather than copying it, and offers the
+upstream fix as a pull request. See `01_Design.md` sections 8.3 and 10.
 
 The pattern from `spoolmanapi/router.py`, two routers side by side:
 
