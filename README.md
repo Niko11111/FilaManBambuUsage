@@ -34,16 +34,16 @@ is already set up in FilaMan.
   spool (which moves the booking with it), correct an amount, delete an entry
 - **Warns while a print runs** when the assigned spool does not hold enough for
   what is left to print
-- **Keeps FilaMan's navigation** while the page is open: FilaMan serves a plugin
-  page outside its own interface, so the page borrows the shell at runtime
-  rather than carrying a copy of it. Where that is not possible, it falls back
-  to standing on its own with a link back
+- **Sits inside FilaMan's navigation** while the page is open, since FilaMan
+  1.2.45 renders a plugin page in its own shell. That mechanism came out of this
+  plugin as an upstream pull request, so every plugin gained it, not only this
+  one
 
 ![Choosing a spool, with what the print still needs](docs/images/spool-picker.jpg)
 
 ## Status
 
-**Version 0.8.3. It works, and it has booked a real print.**
+**Version 0.9.0. It works, and it has booked a real print.**
 
 ### Proven on hardware
 
@@ -132,7 +132,9 @@ before the endpoints answer.
 
 ## Requirements
 
-- FilaMan with support for `plugin_type: "integration"`
+- **FilaMan 1.2.45 or newer.** That release renders a plugin page inside the
+  navigation shell, which this page relies on. On an older FilaMan the page
+  still works, but stands on its own without the navigation around it
 - At least one printer with `driver_key == "bambulab"`, which is where host,
   serial and access code come from
 - The printer reachable on the LAN over MQTT and FTPS. The Bambu cloud is not

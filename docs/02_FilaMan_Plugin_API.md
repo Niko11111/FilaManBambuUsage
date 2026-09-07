@@ -108,16 +108,20 @@ removed. `loadPluginNav()` in `frontend/src/layouts/Layout.astro` appends them
 under a "Plugins" heading as `a.href = p.page_url`, a plain link. In FilaMan
 since 1.1.6.
 
-**A plugin page is still not embedded into FilaMan's interface.**
-`serve_plugin_page()` answers with `FileResponse(page.html)`, so the browser
-leaves the Astro shell and the drawer is gone for as long as the page is open.
-The only plugin page that keeps it is the built-in FilamentDB import, whose
-`page_url` is `/admin/system/filamentdb-import`, an Astro page of FilaMan's own.
-No plugin can bring one: `frontend/astro.config.mjs` builds statically and nginx
-serves the result from `/app/static`.
+**Since 1.2.45 a plugin page is embedded into FilaMan's interface.**
+`loadPluginNav()` links at `/plugin-view?p=<slug>`, and `plugin-view.astro`
+renders `Layout.astro` around an iframe of `/plugin-page/<slug>`, so the drawer
+stays. The page inside the frame is still served by `serve_plugin_page()` as
+`FileResponse(page.html)` and is still a document of its own: FilaMan reads its
+title and catches clicks on links that lead out of the plugin, nothing more.
 
-This plugin borrows the shell at runtime rather than copying it, and offers the
-upstream fix as a pull request. See `01_Design.md` sections 8.3 and 10.
+Before 1.2.45 the browser left the Astro shell and the drawer was gone for as
+long as the page was open. The only plugin page that kept it was the built-in
+FilamentDB import, whose `page_url` is `/admin/system/filamentdb-import`, an
+Astro page of FilaMan's own. No plugin can bring one: `frontend/astro.config.mjs`
+builds statically and nginx serves the result from `/app/static`. That is why
+this plugin borrowed the shell at runtime until 0.8.4 and why the fix belonged
+upstream. See `01_Design.md` sections 8.3 and 10.
 
 The pattern from `spoolmanapi/router.py`, two routers side by side:
 

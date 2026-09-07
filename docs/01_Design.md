@@ -464,55 +464,59 @@ this plugin simply reads the result. See CONTRIBUTING.md section 3.
 The column stays in `bambu_usage_settings`, because nothing in this schema is
 ever dropped, and it is marked as abandoned there.
 
-### 8.3 The borrowed shell
+### 8.3 The page inside FilaMan's shell
 
-FilaMan serves a plugin page raw. `show_in_nav: true` in the manifest puts an
-entry into FilaMan's own drawer (`GET /api/v1/plugin-nav`, rendered by
-`loadPluginNav()` in `Layout.astro`, there since FilaMan 1.1.6), but that entry
-links straight at `page_url` and `serve_plugin_page()` answers with
-`FileResponse(page.html)`. The browser leaves the Astro shell, so the drawer is
-gone for as long as the page is open. The one plugin page that keeps it is the
-built-in FilamentDB import, whose `page_url` points at an Astro page of
-FilaMan's own. The frontend is a static build, so a plugin cannot bring one.
+FilaMan renders a plugin page inside its own shell. `show_in_nav: true` in the
+manifest puts an entry into the drawer (`GET /api/v1/plugin-nav`, rendered by
+`loadPluginNav()` in `Layout.astro`), that entry links at `/plugin-view?p=<slug>`,
+and `plugin-view.astro` renders `Layout.astro` around an iframe of
+`/plugin-page/<slug>`. The drawer stays, and this page has to do nothing for it.
 
-Rebuilding the drawer here would mean carrying a copy of somebody else's
-interface and re-copying it after every FilaMan release. The page borrows it at
-runtime instead:
+**That is the whole mechanism, and it is not ours.** It arrived in FilaMan
+1.2.45, which is therefore the version this plugin needs.
 
-1. it fetches FilaMan's own start page,
-2. lifts `#fm-page` (the drawer and `main`), the `/_astro/` stylesheet and the
-   layout module out of it,
-3. moves its own `.page-content` into `main`, rather than rebuilding it, so the
-   handlers already on it stay attached,
-4. and lets FilaMan's layout module do the rest: language, the check for a
-   session, the plugin list, the active entry, the theme buttons, collapsing and
-   logging out.
+Until then it was different, and the history explains what is left in the code.
+FilaMan served a plugin page raw: the navigation linked straight at `page_url`,
+`serve_plugin_page()` answered with `FileResponse(page.html)`, and the browser
+left the Astro shell, so the drawer was gone for as long as the page was open.
+Version 0.8.4 of this plugin worked around it by borrowing the shell at runtime,
+fetching FilaMan's start page and lifting the drawer out of it. That worked, but
+it lived off FilaMan's DOM staying as it is. The clean fix belonged upstream and
+went there as a pull request, see section 10. It was merged, and 0.9.0 took the
+workaround out again: about 150 lines of borrowing became these three.
 
-Nothing is copied into this repository. What it depends on are FilaMan's own
-names, `#fm-page`, `aside.fm-sidebar`, `main` and `#fm-confirm-overlay`, and
-each one is a guard rather than an assumption: if a release renames one, or the
-request fails, the page stays exactly as it always looked, with the way back as
-a button at the top. **That fallback is what makes borrowing acceptable at all.
-The worst case is the state of yesterday, not a broken page.**
+```js
+if (window.self !== window.top) {
+  document.documentElement.classList.add('in-fm-frame');
+}
+```
 
-It also stands down when the page is not the top window. If FilaMan opens a
-plugin page in a frame of its own one day, which is what section 10 proposes,
-the shell is already there and a second drawer inside the first would be worse
-than none.
+**Being in a frame is now the normal case, not the exception.** The class is
+what the page hangs the one visible difference on: inside the shell the drawer
+is the way back, so the link at the top is hidden. Opening the page directly by
+its own URL stays possible, is then the top window, and keeps that link. Nothing
+else about the page changes either way.
 
-Two consequences are worth writing down:
+Three consequences are worth writing down:
 
-- **The page's translation attribute carries the plugin's name**,
-  `data-bambu-i18n`. FilaMan's `translatePage()` overwrites the text of every
-  element marked with its own plain attribute, and its `t()` returns the key
-  itself when its dictionary does not know it. A shared attribute would leave
-  `history.heading` standing in our headings. `tests/test_i18n.py` holds the
-  plain attribute out.
-- **The borrowed stylesheet is placed in front of this page's own style block.**
-  FilaMan's rules are the ground the drawer stands on, ours decide what the page
-  looks like, and ours win the ties.
-
-The clean answer still lies upstream, see section 10.
+- **The minimum version cannot be enforced, only stated.** A manifest carries
+  `plugin_key`, `name`, `version`, `description` and `author`, and FilaMan checks
+  no version of its own against it. On an older FilaMan the page still works, it
+  simply stands there without the drawer, with its own link as the way back. The
+  requirement is named in the README and in the manifest `description`, which is
+  the text FilaMan shows in its plugin list.
+- **The page's translation attribute stays `data-bambu-i18n`.** The original
+  reason is gone: it existed because the borrowed layout module ran
+  `translatePage()` in our document, and its `t()` returns the key itself for a
+  key it does not know, which would have left `history.heading` standing in our
+  headings. Inside the frame FilaMan only reads the title and catches clicks on
+  links that lead out of the plugin. The attribute stays anyway, because it costs
+  nothing and it keeps this page's text independent of what the host does with
+  the frame document. `tests/test_i18n.py` holds the plain attribute out.
+- **The page is a document of its own again.** No foreign stylesheet is pulled
+  in front of our style block any more, so every colour comes from our own
+  tokens, and the three themes are followed through `data-theme` and
+  `localStorage['theme']` exactly as before.
 
 ## 9. Languages
 
@@ -528,8 +532,10 @@ We mirror FilaMan's own contract, taken from `frontend/src/lib/i18n.ts`:
 - the chosen language lives in **`localStorage['lang']`**, synchronised from the
   user profile through `/api/v1/me`, falling back to `en`
 - nested JSON with **dotted keys**, interpolation through **`{name}`**
-- the DOM is translated through **`data-i18n`**, `data-i18n-placeholder` and
-  `data-i18n-title`
+- the DOM is translated through `data-i18n`, `data-i18n-placeholder` and
+  `data-i18n-title`. **This page uses `data-bambu-i18n` instead**, the one place
+  where it mirrors the contract but deliberately not the attribute name, so that
+  no foreign dictionary can overwrite our headings. Section 8.3 has the reason.
 - `lang` is set on the document element
 
 Because we use the same contract, **the plugin page follows whatever language
@@ -588,18 +594,17 @@ a spool swapped mid print. What is still missing from the counterpart to
 2. Whether the Bambu Lab driver could publish a `print_complete` event on the
    event bus. If that succeeds, stage 2 loses its own MQTT connection and
    `tracker.py` shrinks considerably.
-3. Whether a plugin page could be rendered inside FilaMan's own shell, so the
-   navigation drawer stays visible. Today the navigation links straight at
-   `page_url` and the backend returns `page.html` raw, which means a plugin page
-   takes over the whole window. Section 8.3 describes what this page does about
-   it, which is to borrow the shell at runtime. That works, but it lives off
-   FilaMan's DOM staying as it is. The clean fix is one static page in the
-   frontend that renders `Layout.astro` around an iframe of
-   `/plugin-page/<slug>`, plus the line in `loadPluginNav()` that links there.
-   FilaMan already allows the embedding (`allow_iframe_embedding` in
-   `app/main.py`), every plugin would gain the drawer, and nothing in this
-   plugin would have to change. Offered as a pull request, the borrowed shell
-   comes out again the day it lands.
+3. **Answered, and done.** Whether a plugin page could be rendered inside
+   FilaMan's own shell, so the navigation drawer stays visible. It could not:
+   the navigation linked straight at `page_url` and the backend returned
+   `page.html` raw, so a plugin page took over the whole window. FilaMan already
+   allowed the embedding (`allow_iframe_embedding` in `app/main.py`), so the fix
+   was one static page in the frontend rendering `Layout.astro` around an iframe
+   of `/plugin-page/<slug>`, plus the line in `loadPluginNav()` that links there.
+   Offered as pull request #134, merged on 23 August 2026 and shipped in FilaMan
+   **1.2.45**. Every plugin gains the drawer, not only this one. The borrowed
+   shell came out of `page.html` in 0.9.0, which is what raised the minimum
+   version, see section 8.3.
 
 ## 11. Module layout
 
