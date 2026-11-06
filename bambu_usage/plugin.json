@@ -1,4 +1,5 @@
 {
+  "icon": "icon.svg",
   "plugin_key": "bambu_usage",
   "name": "Bambu Usage Tracking",
   "plugin_type": "integration",

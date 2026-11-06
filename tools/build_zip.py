@@ -22,6 +22,7 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
+from xml.etree import ElementTree
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PLUGIN_DIR = REPO_ROOT / "bambu_usage"
@@ -44,6 +45,7 @@ ALLOWED_EXTENSIONS = {
     ".yml",
     ".toml",
     ".html",
+    ".svg",
 }
 
 REQUIRED_MANIFEST_FIELDS = {"plugin_key", "name", "version", "description", "author"}
@@ -54,6 +56,18 @@ PLUGIN_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,49}$")
 SEMVER_PATTERN = re.compile(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$")
 
 MAX_FILE_SIZE = 1 * 1024 * 1024
+
+MAX_ICON_BYTES = 64 * 1024
+SVG_NAMESPACE = "{http://www.w3.org/2000/svg}"
+SVG_ELEMENTS = {"svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "title", "desc"}
+SVG_ATTRIBUTES = {
+    "viewBox", "width", "height", "fill", "stroke", "stroke-width",
+    "stroke-linecap", "stroke-linejoin", "stroke-miterlimit", "stroke-dasharray",
+    "stroke-dashoffset", "fill-rule", "clip-rule", "opacity", "fill-opacity",
+    "stroke-opacity", "transform", "d", "x", "y", "x1", "y1", "x2", "y2",
+    "cx", "cy", "r", "rx", "ry", "points", "preserveAspectRatio",
+}
+
 
 # Never packed, regardless of extension.
 EXCLUDE_DIRS = {"__pycache__", ".git", ".idea", ".vscode"}
@@ -68,6 +82,43 @@ EXCLUDE_FILES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 
 class ValidationError(Exception):
     """A packaging fault FilaMan would reject in exactly the same way."""
+
+
+def validate_icon(plugin_dir: Path, icon: str) -> None:
+    """Mirror FilaMan's plugin_icon_service.py without requiring its app runtime."""
+    try:
+        if (
+            not isinstance(icon, str)
+            or len(icon) > 250
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*\.svg", icon)
+            or any(part in ("", ".", "..") for part in icon.split("/"))
+            or plugin_dir.is_symlink()
+        ):
+            raise ValueError("icon must be a relative .svg path within the plugin package")
+        path = (plugin_dir / icon).resolve()
+        if not path.is_relative_to(plugin_dir.resolve()):
+            raise ValueError("icon must stay within the plugin package")
+        with path.open("rb") as stream:
+            data = stream.read(MAX_ICON_BYTES + 1)
+        if len(data) > MAX_ICON_BYTES:
+            raise ValueError("icon must be at most 64 KiB")
+        source = data.decode("utf-8")
+        if "<!" in source or re.search(r"<\?(?!xml\s)", source, re.IGNORECASE):
+            raise ValueError("icon must not contain declarations, entities or comments")
+        try:
+            root = ElementTree.fromstring(source)
+        except ElementTree.ParseError as error:
+            raise ValueError("icon must be valid SVG XML") from error
+        if root.tag != SVG_NAMESPACE + "svg":
+            raise ValueError("icon must have an SVG root with the SVG namespace")
+        for node in root.iter():
+            if node.tag not in {SVG_NAMESPACE + tag for tag in SVG_ELEMENTS}:
+                raise ValueError("icon contains an unsupported SVG element")
+            for attribute, value in node.attrib.items():
+                if attribute not in SVG_ATTRIBUTES or re.search(r"url\s*\(|[\\\x00-\x1f]", value, re.IGNORECASE):
+                    raise ValueError("icon contains an unsupported SVG attribute or reference")
+    except (OSError, ValueError) as exc:
+        raise ValidationError(f"Invalid plugin icon {icon!r}: {exc}") from exc
 
 
 def iter_plugin_files(plugin_dir: Path) -> tuple[list[Path], list[Path]]:
@@ -91,7 +142,7 @@ def iter_plugin_files(plugin_dir: Path) -> tuple[list[Path], list[Path]]:
 
 
 def validate_extensions(plugin_dir: Path, files: list[Path]) -> None:
-    """The extension allow list. Every .png, .css, .js and .svg fails here.
+    """The extension allow list. SVG icons are allowed; .png, .css and .js still fail here.
 
     FilaMan checks ``if suffix and suffix not in ALLOWED_EXTENSIONS``, so a file
     with no extension at all passes. That is mirrored deliberately, so this
@@ -99,12 +150,14 @@ def validate_extensions(plugin_dir: Path, files: list[Path]) -> None:
     """
     for path in files:
         suffix = path.suffix.lower()
+        if suffix == ".svg":
+            validate_icon(plugin_dir, str(path.relative_to(plugin_dir)))
         if suffix and suffix not in ALLOWED_EXTENSIONS:
             rel = path.relative_to(plugin_dir)
             raise ValidationError(
                 f"Forbidden file extension: {rel} ({suffix}). "
                 f"Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}. "
-                "Images and script files have to be served at runtime through the "
+                "Raster images and script files have to be served at runtime through the "
                 "router, see docs/01_Design.md section 8.1."
             )
 
@@ -193,6 +246,9 @@ def validate_manifest(plugin_dir: Path) -> dict:
             "have to agree, because FilaMan imports as app.plugins.<key>"
         )
 
+    if manifest.get("icon") is not None:
+        validate_icon(plugin_dir, manifest["icon"])
+
     return manifest
 
 
@@ -224,6 +280,10 @@ def validate(plugin_dir: Path) -> tuple[dict, list[Path], list[Path]]:
     files, dropped = iter_plugin_files(plugin_dir)
     if not files:
         raise ValidationError("No files found to package")
+
+    icon = manifest.get("icon")
+    if icon is not None and plugin_dir / icon not in files:
+        raise ValidationError(f"Declared icon is excluded from the package: {icon}")
 
     validate_extensions(plugin_dir, files)
     validate_hidden_files(plugin_dir, files)
@@ -331,12 +391,75 @@ def selftest() -> int:
         # With --force it has to go through, for a build that never left here.
         build(staged, manifest, files, force=True, dist_dir=sandbox)
 
+        # Exercise the same SVG and manifest boundary as the host installer.
+        manifest_path = staged / "plugin.json"
+        original_manifest = manifest_path.read_text(encoding="utf-8")
+        original_icon = (staged / "icon.svg").read_bytes()
+        svg = b'<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h24v24z"/></svg>'
+        failures = []
+
+        def expect_rejected(label: str) -> None:
+            try:
+                validate(staged)
+            except ValidationError:
+                return
+            failures.append(label)
+            print(f"FAILED: {label} should have been rejected")
+
+        for label, content in (
+            ("SVG style", b'<svg xmlns="http://www.w3.org/2000/svg"><style>path{fill:red}</style></svg>'),
+            ("SVG script", b'<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>'),
+            ("SVG event handler", b'<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>'),
+            ("SVG reference", b'<svg xmlns="http://www.w3.org/2000/svg"><path fill="url(https://example.com/a)"/></svg>'),
+            ("SVG declaration", b'<!DOCTYPE svg><svg xmlns="http://www.w3.org/2000/svg"/>'),
+            ("invalid SVG XML", b'<svg'),
+            ("invalid SVG encoding", b'\xff'),
+            ("SVG over 64 KiB", svg + b' ' * (65537 - len(svg))),
+        ):
+            (staged / "icon.svg").write_bytes(content)
+            expect_rejected(label)
+        (staged / "icon.svg").write_bytes(svg + b' ' * (65536 - len(svg)))
+        validate(staged)
+        (staged / "icon.svg").write_bytes(original_icon)
+
+        (staged / "extra.svg").write_bytes(b'<svg xmlns="http://www.w3.org/2000/svg"><style/></svg>')
+        expect_rejected("undeclared invalid SVG")
+        (staged / "extra.svg").unlink()
+
+        manifest = json.loads(original_manifest)
+        (Path(tmp) / "outside.svg").write_bytes(svg)
+        for icon in ("missing.svg", "../outside.svg", "/icon.svg", "assets/../icon.svg", "icon.png", "", 42):
+            manifest_path.write_text(json.dumps({**manifest, "icon": icon}), encoding="utf-8")
+            expect_rejected(f"icon path {icon!r}")
+        (staged / "linked.svg").symlink_to(Path(tmp) / "outside.svg")
+        manifest_path.write_text(json.dumps({**manifest, "icon": "linked.svg"}), encoding="utf-8")
+        expect_rejected("icon symlink outside package")
+        (staged / "linked.svg").unlink()
+
+        (staged / "assets").mkdir()
+        excluded_icon = staged / "assets/.git/icon.svg"
+        excluded_icon.parent.mkdir()
+        excluded_icon.write_bytes(svg)
+        manifest_path.write_text(json.dumps({**manifest, "icon": "assets/.git/icon.svg"}), encoding="utf-8")
+        expect_rejected("icon excluded from ZIP")
+        shutil.rmtree(excluded_icon.parent)
+        (staged / "assets/icon.svg").write_bytes(svg)
+        manifest_path.write_text(json.dumps({**manifest, "icon": "assets/icon.svg"}), encoding="utf-8")
+        validate(staged)
+        for legacy in ({**manifest, "icon": None}, {k: v for k, v in manifest.items() if k != "icon"}):
+            manifest_path.write_text(json.dumps(legacy), encoding="utf-8")
+            validate(staged)
+        manifest_path.write_text(original_manifest, encoding="utf-8")
+        if failures:
+            return 1
+
         # With a forbidden extension it has to be rejected.
         (staged / "preview.png").write_bytes(b"\x89PNG\r\n\x1a\n")
         try:
             validate(staged)
         except ValidationError as exc:
             print("Self test passed.")
+            print("  SVG content, size, paths   validated; legacy/nested icons accepted")
             print("  clean package             accepted")
             print("  .DS_Store                 left out, build unaffected")
             print("  package with .env         rejected as a hidden file")
