@@ -23,11 +23,13 @@ import logging
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import delete, insert, or_, select, update
+from sqlalchemy import case, delete, insert, or_, select, update
 
 from .models import (
     OPEN_STATUSES,
     SPOOL_FROM_HAND,
+    STATUS_INCOMPLETE,
+    STATUS_RUNNING,
     STOPPED_STATUSES,
     filament_table,
     printer_status_table,
@@ -188,11 +190,25 @@ async def find_open_print(db: AsyncSession, printer_id: int) -> Any | None:
         .where(
             prints_table.c.printer_id == printer_id,
             prints_table.c.status.in_(OPEN_STATUSES),
+            prints_table.c.finished_at.is_(None),
         )
         .order_by(prints_table.c.started_at.desc())
         .limit(1)
     )
     return result.first()
+
+
+async def interrupt_open_prints(db: AsyncSession, at: datetime) -> None:
+    """Retain interrupted prints for manual review and close them to auto-booking."""
+    status = prints_table.c.status
+    await db.execute(
+        update(prints_table)
+        .where(status.in_(OPEN_STATUSES), prints_table.c.finished_at.is_(None))
+        .values(
+            status=case((status == STATUS_RUNNING, STATUS_INCOMPLETE), else_=status),
+            finished_at=at,
+        )
+    )
 
 
 # How the history can be sorted. An allow list rather than a column name off

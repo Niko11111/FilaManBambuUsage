@@ -50,7 +50,7 @@ from typing import TYPE_CHECKING, Any
 from . import rules
 
 if TYPE_CHECKING:  # imported for annotations only, keeps the module import-light
-    from collections.abc import Callable, Iterable
+    from collections.abc import Awaitable, Callable, Iterable
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -91,6 +91,7 @@ async def start_print(
     started_at: datetime | None = None,
     status: str | None = None,
     tray_tags: dict[str, str] | None = None,
+    require_tracking: Callable[[AsyncSession], Awaitable[None]] | None = None,
 ) -> int:
     """Record a beginning print and return its id.
 
@@ -142,6 +143,8 @@ async def start_print(
         print_id,
         await _build_filament_rows(db, printer_id, metadata, ams_mapping, tray_tags or {}),
     )
+    if require_tracking is not None:
+        await require_tracking(db)
     await db.commit()
 
     return print_id
@@ -243,6 +246,8 @@ async def finish_print(
     completed_fraction: float | None = None,
     stopped_at_layer: int | None = None,
     printer_error_code: int | None = None,
+    *,
+    require_tracking: Callable[[AsyncSession], Awaitable[None]] | None = None,
 ) -> None:
     """Close a print and book it if the settings allow.
 
@@ -263,35 +268,44 @@ async def finish_print(
     if record is None:
         raise UsageError(f"print {print_id} does not exist")
 
+    # An interrupted automatic booking is only retried through manual review.
+    if record.finished_at is not None:
+        return
+
     moment = finished_at or datetime.now(timezone.utc)
 
     if record.status in UNBOOKABLE_STATUSES:
         await store.set_print_status(db, print_id, record.status, finished_at=moment)
-        await db.commit()
-        return
-
-    await store.set_print_status(
-        db,
-        print_id,
-        status,
-        finished_at=moment,
-        completed_fraction=completed_fraction,
-        stopped_at_layer=stopped_at_layer,
-        printer_error_code=printer_error_code,
-    )
+    else:
+        await store.set_print_status(
+            db,
+            print_id,
+            status,
+            finished_at=moment,
+            completed_fraction=completed_fraction,
+            stopped_at_layer=stopped_at_layer,
+            printer_error_code=printer_error_code,
+        )
+    if require_tracking is not None:
+        await require_tracking(db)
     await db.commit()
 
-    if not rules.should_spend(
+    if record.status in UNBOOKABLE_STATUSES or not rules.should_spend(
         finished_normally=status == STATUS_FINISHED,
         auto_spend=settings.auto_spend,
         spend_on_cancel=settings.spend_on_cancel,
     ):
         return
 
-    await spend_print(db, print_id)
+    await spend_print(db, print_id, require_tracking=require_tracking)
 
 
-async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
+async def spend_print(
+    db: AsyncSession,
+    print_id: int,
+    *,
+    require_tracking: Callable[[AsyncSession], Awaitable[None]] | None = None,
+) -> dict[int, float]:
     """Book everything of one print that has a spool and is not booked yet.
 
     Returns the grams booked per spool.
@@ -367,6 +381,10 @@ async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
                 await store.mark_filament_spent(
                     db, row.id, rules.share_of(row, share_for(row)) or 0.0, moment
                 )
+            if require_tracking is not None:
+                # A disable between spool commits must leave the summary accurate.
+                await _update_spent_flag(db, print_id)
+                await require_tracking(db)
             await filaman.record_consumption(db, spool, grams, moment, record.file_name)
         except (SQLAlchemyError, filaman.FilaManUnavailableError) as exc:
             await db.rollback()
@@ -377,12 +395,17 @@ async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
         booked[spool_id] = grams
 
     if was_stopped:
-        await _rebook_stopped_rows(db, record, rows, pending, share_for, moment, failures)
+        await _rebook_stopped_rows(
+            db, record, rows, pending, share_for, moment, failures, require_tracking
+        )
 
     # Written whether or not anything failed, so that a retry which works clears
     # the warning instead of leaving a stale one behind.
     await store.set_print_error(db, print_id, _failure_note(failures))
-    await _refresh_spent_flag(db, print_id)
+    await _update_spent_flag(db, print_id)
+    if require_tracking is not None:
+        await require_tracking(db)
+    await db.commit()
 
     return booked
 
@@ -408,6 +431,7 @@ async def _rebook_stopped_rows(
     share_for: Callable[[Any], float],
     moment: datetime,
     failures: list[str],
+    require_tracking: Callable[[AsyncSession], Awaitable[None]] | None,
 ) -> None:
     """Bring rows booked before the print stopped back to what was really used.
 
@@ -451,6 +475,8 @@ async def _rebook_stopped_rows(
 
         try:
             await store.mark_filament_spent(db, int(row.id), target, moment)
+            if require_tracking is not None:
+                await require_tracking(db)
             await _move_difference(db, spool, difference, moment, _STOPPED_NOTE)
         except (SQLAlchemyError, filaman.FilaManUnavailableError) as exc:
             await db.rollback()
@@ -465,6 +491,8 @@ async def split_filament_row(
     filament_row_id: int,
     at_fraction: float,
     new_spool_id: int,
+    *,
+    require_tracking: Callable[[AsyncSession], Awaitable[None]] | None = None,
 ) -> bool:
     """Divide one filament row where the spool it draws from changed.
 
@@ -522,6 +550,8 @@ async def split_filament_row(
             )
         ],
     )
+    if require_tracking is not None:
+        await require_tracking(db)
     await db.commit()
 
     return True
@@ -564,7 +594,8 @@ async def assign_spool(
         await spend_print(db, int(row.print_id))
         return
 
-    await _refresh_spent_flag(db, print_id=int(row.print_id))
+    await _update_spent_flag(db, print_id=int(row.print_id))
+    await db.commit()
 
 
 async def _move_booking(db: AsyncSession, row: Any, new_spool_id: int | None) -> None:
@@ -651,7 +682,8 @@ async def correct_usage(db: AsyncSession, filament_row_id: int, grams: float) ->
 
     await store.override_filament_amount(db, filament_row_id, grams, moment)
     await _move_difference(db, spool, difference, moment, _CORRECTION_NOTE)
-    await _refresh_spent_flag(db, print_id=int(row.print_id))
+    await _update_spent_flag(db, print_id=int(row.print_id))
+    await db.commit()
 
 
 async def _move_difference(
@@ -692,8 +724,8 @@ def _failure_note(failures: list[str]) -> str | None:
     return "; ".join(failures)[:MAX_ERROR_LENGTH]
 
 
-async def _refresh_spent_flag(db: AsyncSession, print_id: int) -> None:
-    """Keep prints.spent in step with the rows, and commit.
+async def _update_spent_flag(db: AsyncSession, print_id: int) -> None:
+    """Keep prints.spent in step with the rows in the current transaction.
 
     A print counts as booked when nothing bookable is left **and** something was
     actually booked. The second half matters: a print whose slots could not be
@@ -707,4 +739,3 @@ async def _refresh_spent_flag(db: AsyncSession, print_id: int) -> None:
 
     open_bookings, settled = await store.booking_state(db, print_id)
     await store.set_print_spent(db, print_id, open_bookings == 0 and settled > 0)
-    await db.commit()
