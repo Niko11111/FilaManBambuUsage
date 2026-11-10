@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 # The driver plugin whose slot state this plugin reads. A printer on any other
 # driver is none of our business.
 BAMBU_DRIVER_KEY = "bambulab"
+PLUGIN_KEY = "bambu_usage"
 
 # Written to SpoolEvent.source, so a booking is recognisable in FilaMan's spool
 # log and separable from the scale and from manual entry.
@@ -127,6 +128,17 @@ async def session_scope() -> AsyncIterator[AsyncSession]:
     (async_session_maker,) = _import_names("app.core.database", "async_session_maker")
     async with async_session_maker() as session:
         yield session
+
+
+async def is_plugin_active(db: AsyncSession, *, for_update: bool = False) -> bool:
+    """Read the current host toggle, treating an uninstalled plugin as inactive."""
+    (select,) = _import_names("sqlalchemy", "select")
+    (InstalledPlugin,) = _import_names("app.models.plugin", "InstalledPlugin")
+
+    statement = select(InstalledPlugin.is_active).where(InstalledPlugin.plugin_key == PLUGIN_KEY)
+    if for_update:
+        statement = statement.with_for_update()
+    return bool(await db.scalar(statement))
 
 
 async def list_bambu_printers(db: AsyncSession) -> list[BambuPrinter]:

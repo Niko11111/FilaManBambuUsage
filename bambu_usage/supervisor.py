@@ -30,11 +30,11 @@ import fcntl
 import logging
 import tempfile
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:  # imported for annotations only
-    from .tracker import PrinterListener
+from .tracker import PrinterListener, TrackingPause
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,7 @@ class _Supervisor:
         self.thread: threading.Thread | None = None
         self.loop: asyncio.AbstractEventLoop | None = None
         self.listeners: dict[int, PrinterListener] = {}
+        self.pause = TrackingPause()
         self.engine: Any = None
         self.sessions: Any = None
         self.lock_handle: Any = None
@@ -195,14 +196,20 @@ async def stop_tracking() -> None:
 async def refresh_printers() -> None:
     """Reconcile the running listeners with FilaMan's printer list.
 
-    Three things can have changed since the last round: a printer appeared or
-    vanished, its credentials were edited, or tracking was switched off for it.
-    All three are handled by comparing rather than by remembering.
+    The host toggle takes precedence over the printer list and printer settings.
+    Each enable period gets a fresh pause signal so old callbacks cannot resume.
     """
     from . import filaman, settings, store
 
     async with _supervisor.sessions() as db:
-        printers = await filaman.list_bambu_printers(db)
+        active = await filaman.is_plugin_active(db)
+        if not active:
+            _supervisor.pause.requested = True
+        was_paused = _supervisor.pause.requested
+        if was_paused:
+            await _supervisor.pause.record_interruption(db)
+
+        printers = await filaman.list_bambu_printers(db) if active else []
         wanted = {printer.printer_id: printer for printer in printers}
         enabled = {}
         for printer_id in wanted:
@@ -215,8 +222,18 @@ async def refresh_printers() -> None:
     for printer_id in list(_supervisor.listeners):
         printer = wanted.get(printer_id)
         listener = _supervisor.listeners[printer_id]
-        if printer is None or not enabled[printer_id] or not listener.describes(printer):
+        if (
+            printer is None
+            or listener.pause.requested
+            or not enabled[printer_id]
+            or not listener.describes(printer)
+        ):
             await _drop_listener(printer_id)
+
+    if active and was_paused:
+        _supervisor.pause = TrackingPause()
+    if _supervisor.pause.requested:
+        return
 
     for printer_id, printer in wanted.items():
         if not enabled[printer_id]:
@@ -232,8 +249,6 @@ async def refresh_printers() -> None:
 
 async def _add_listener(printer: Any) -> None:
     """Start one listener. A printer that refuses must not stop the others."""
-    from .tracker import PrinterListener
-
     listener = PrinterListener(
         printer_id=printer.printer_id,
         printer_name=printer.name,
@@ -242,6 +257,7 @@ async def _add_listener(printer: Any) -> None:
         access_code=printer.access_code,
         sessions=_supervisor.sessions,
         loop=_supervisor.loop,
+        pause=_supervisor.pause,
     )
 
     try:
@@ -253,7 +269,8 @@ async def _add_listener(printer: Any) -> None:
             await listener.publish_status()
         return
 
-    _supervisor.listeners[printer.printer_id] = listener
+    if listener.client is not None:
+        _supervisor.listeners[printer.printer_id] = listener
 
 
 async def _drop_listener(printer_id: int) -> None:
@@ -268,8 +285,6 @@ async def _drop_listener(printer_id: int) -> None:
 
 async def _publish_idle(printer: Any) -> None:
     """Show a printer with tracking switched off, rather than not at all."""
-    from datetime import datetime, timezone
-
     from . import store
 
     async with _supervisor.sessions() as db:

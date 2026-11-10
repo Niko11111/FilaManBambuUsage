@@ -213,7 +213,12 @@ Either way the listeners need:
 
 Deactivated plugins are recorded in `InstalledPlugin` with `is_active = False`.
 The manager skips printers whose `driver_key` belongs to a deactivated plugin.
-This plugin has to observe its own state in the same way.
+The tracker reads this toggle before starting listeners and before committing
+report-driven changes or booking spool consumption. The lock owner stays in
+place while paused and reconnects on reconciliation after re-enable. Disabling
+closes open jobs for manual review. Running prints become incomplete, and jobs
+already marked incomplete or missing a 3MF keep their original status.
+Consumption already committed to a spool remains recorded.
 
 One more consequence of finding 1: `_mount_plugin_routers()` wraps the import in
 `try/except Exception` and only logs a warning. **An import error in `router.py`
@@ -295,6 +300,7 @@ exception: FastAPI resolves dependencies while the route decorators run, so
 |---|---|
 | `app.core.database.async_session_maker`, `engine` | database access |
 | `app.core.event_bus.event_bus` | refreshing the page |
+| `app.models.plugin.InstalledPlugin` | reading the integration's active flag |
 | `app.models.printer.Printer` | finding printers with `driver_key == "bambulab"`, reading `driver_config` |
 | `app.models.printer.PrinterSlot` | `slot_no`, `custom_fields["slot_index"]` |
 | `app.models.printer.PrinterSlotAssignment` | `spool_id` per slot |

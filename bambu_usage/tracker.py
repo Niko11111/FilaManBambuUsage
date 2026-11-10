@@ -59,13 +59,40 @@ from .report import (
 )
 
 if TYPE_CHECKING:  # imported for annotations only
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from .filaman import BambuPrinter
+    from .report import PrintJob
 
 logger = logging.getLogger(__name__)
 
 
 class TrackerError(RuntimeError):
     """A listener could not be brought up or kept alive."""
+
+
+class TrackingPaused(TrackerError):
+    """FilaMan disabled the integration during this listener's lifetime."""
+
+
+@dataclass
+class TrackingPause:
+    """One pause signal shared by all listeners in an enabled period."""
+
+    requested: bool = False
+    _recorded: bool = False
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+    async def record_interruption(self, db: AsyncSession) -> None:
+        """Close open jobs once before a new set of listeners can start."""
+        from . import store
+
+        async with self._lock:
+            if not self._recorded:
+                await store.interrupt_open_prints(db, datetime.now(timezone.utc))
+                await db.commit()
+                self._recorded = True
+
 
 # Reconnecting is paho's own job: connect_async plus loop_start retries with a
 # growing delay by itself, and one unreachable printer therefore never stalls
@@ -107,6 +134,7 @@ class PrinterListener:
     state: dict = field(default_factory=dict)
     client: Any = None
     last_assignment_check: datetime | None = None
+    pause: TrackingPause = field(default_factory=TrackingPause)
 
     def describes(self, printer: BambuPrinter) -> bool:
         """Whether this listener still matches how FilaMan knows the printer.
@@ -129,30 +157,46 @@ class PrinterListener:
         pushall on connect, which is what makes the printer send its full state
         instead of leaving us blind until the next change.
         """
+        if self.pause.requested:
+            return
+
         from bambulabs_api import PrinterMQTTClient
 
-        client = PrinterMQTTClient(self.host, self.access_code, self.serial)
-        client.on_message_handler = self._on_message
-        client.on_connect_handler = self._on_connect
-        client.on_disconnect_handler = self._on_disconnect
+        try:
+            async with self.sessions() as db:
+                await self._write_status(db)
+                client = PrinterMQTTClient(self.host, self.access_code, self.serial)
+                client.on_message_handler = self._on_message
+                client.on_connect_handler = self._on_connect
+                client.on_disconnect_handler = self._on_disconnect
 
-        self.client = client
-        client.connect()
-        client.start()
+                # These calls schedule MQTT work while the toggle is still locked.
+                self.client = client
+                client.connect()
+                client.start()
+                await db.commit()
+        except TrackingPaused:
+            await self._record_interruption()
+            return
+        except BaseException:
+            self._stop_client()
+            raise
 
         logger.info("printer %s: listener started for %s", self.printer_id, self.host)
-        await self.publish_status()
 
     async def stop(self) -> None:
         """Disconnect and release the connection."""
+        self._stop_client()
+        logger.info("printer %s: listener stopped", self.printer_id)
+        await self.publish_status()
+
+    def _stop_client(self) -> None:
         if self.client is not None:
             with contextlib.suppress(OSError, RuntimeError):
                 self.client.stop()
 
         self.client = None
         self.connected = False
-        logger.info("printer %s: listener stopped", self.printer_id)
-        await self.publish_status()
 
     def _on_message(self, mqtt_client: Any, client: Any, userdata: Any, msg: Any) -> None:
         """Hand one report over to our loop. Runs in paho's thread.
@@ -183,6 +227,34 @@ class PrinterListener:
         self.connected = False
         asyncio.run_coroutine_threadsafe(self.publish_status(), self.loop)
 
+    async def _require_tracking(self, db: AsyncSession | None = None) -> None:
+        """Recheck the toggle, locking it through the commit for a report write."""
+        from . import filaman
+
+        if self.pause.requested:
+            raise TrackingPaused
+
+        if db is None:
+            async with self.sessions() as session:
+                active = await filaman.is_plugin_active(session)
+        else:
+            # SQLite already holds its write lock by this point. Other hosts
+            # lock the toggle row until the report or spool write commits.
+            active = await filaman.is_plugin_active(db, for_update=True)
+
+        if not active:
+            self.pause.requested = True
+        if self.pause.requested:
+            raise TrackingPaused
+
+    async def _record_interruption(self) -> None:
+        """Keep open prints for manual review after a disabled write unwinds."""
+        try:
+            async with self.sessions() as db:
+                await self.pause.record_interruption(db)
+        except Exception:
+            logger.exception("bambu_usage: recording interrupted prints failed")
+
     async def handle_message(self, payload: dict, received_at: datetime | None = None) -> None:
         """Merge one report into the state and act on any transition.
 
@@ -191,6 +263,8 @@ class PrinterListener:
         printer silently out of service. One printer must never take the others
         down, and it must not disappear quietly either.
         """
+        if self.pause.requested:
+            return
         moment = received_at or datetime.now(timezone.utc)
 
         # Whether a state was ever known, not whether a message was ever seen.
@@ -203,31 +277,28 @@ class PrinterListener:
         transition = detect_transition(self.state, merged)
         self.state = merged
 
-        if transition is None:
-            try:
-                await self._watch_assignments(moment)
-            except Exception as exc:
-                logger.exception("printer %s: watching the assignment failed", self.printer_id)
-                self.last_error = str(exc)[:MAX_ERROR_LENGTH]
-            return
-
         try:
-            if transition.kind == TRANSITION_STARTED:
-                await self._begin_print(joined_mid_print=joined_mid_print, at=moment)
+            await self._require_tracking()
+            if transition is None:
+                await self._watch_assignments(merged, moment)
+            elif transition.kind == TRANSITION_STARTED:
+                await self._begin_print(merged, joined_mid_print=joined_mid_print, at=moment)
             else:
-                await self._end_print(transition.gcode_state, at=moment)
+                await self._end_print(merged, transition.gcode_state, at=moment)
+        except TrackingPaused:
+            await self._record_interruption()
         except Exception as exc:
             logger.exception("printer %s: handling a report failed", self.printer_id)
             self.last_error = str(exc)[:MAX_ERROR_LENGTH]
             with contextlib.suppress(Exception):
                 await self.publish_status()
 
-    async def _begin_print(self, joined_mid_print: bool, at: datetime) -> None:
+    async def _begin_print(self, state: dict, joined_mid_print: bool, at: datetime) -> None:
         """Record a print that is starting, with whatever the 3MF gives us."""
         from . import service, settings
         from .models import STATUS_INCOMPLETE
 
-        job = describe_job(self.state)
+        job = describe_job(state)
 
         async with self.sessions() as db:
             config = await settings.load_settings(db, self.printer_id)
@@ -239,6 +310,7 @@ class PrinterListener:
         # the better part of a minute, and holding a database connection open
         # for that would be felt by every other worker on SQLite.
         metadata, status = await self._fetch_3mf(job)
+        await self._require_tracking()
 
         if joined_mid_print:
             # The plugin attached in the middle of this print. It is recorded so
@@ -258,6 +330,7 @@ class PrinterListener:
                 started_at=at,
                 status=status,
                 tray_tags=self._tray_tags(),
+                require_tracking=self._require_tracking,
             )
 
         self.current_print_id = print_id
@@ -325,7 +398,7 @@ class PrinterListener:
                 self.last_error = str(exc)[:MAX_ERROR_LENGTH]
                 return threemf.PrintMetadata(), STATUS_NO_3MF
 
-    async def _end_print(self, gcode_state: str | None, at: datetime) -> None:
+    async def _end_print(self, state: dict, gcode_state: str | None, at: datetime) -> None:
         """Close the running print and let the service decide about booking."""
         from . import service, settings, store
         from .models import STATUS_CANCELLED, STATUS_FAILED, STATUS_FINISHED
@@ -333,7 +406,7 @@ class PrinterListener:
         # A fault leaves a code behind, a print somebody stopped does not. That
         # reading is an assumption, see report.error_code, so the code itself is
         # stored with the print: the first real fault shows whether it holds.
-        code = error_code(self.state)
+        code = error_code(state)
         if gcode_state == STATE_FINISH:
             status = STATUS_FINISHED
         else:
@@ -359,9 +432,10 @@ class PrinterListener:
                 status,
                 config,
                 at,
-                completed_fraction=completed_fraction(self.state),
-                stopped_at_layer=layer_of(self.state),
+                completed_fraction=completed_fraction(state),
+                stopped_at_layer=layer_of(state),
                 printer_error_code=code,
+                require_tracking=self._require_tracking,
             )
 
         logger.info("printer %s: print %s ended as %s", self.printer_id, print_id, status)
@@ -369,7 +443,7 @@ class PrinterListener:
         self.current_file_name = None
         await self.publish_status()
 
-    async def _watch_assignments(self, at: datetime) -> None:
+    async def _watch_assignments(self, state: dict, at: datetime) -> None:
         """Notice a spool being swapped while the print is running.
 
         A spool that runs empty gets replaced, and from that moment the print
@@ -403,12 +477,14 @@ class PrinterListener:
 
         from . import filaman, rules, service, store
 
-        fraction = completed_fraction(self.state)
-        layer = layer_of(self.state)
+        fraction = completed_fraction(state)
+        layer = layer_of(state)
 
         async with self.sessions() as db:
             record = await store.get_print(db, self.current_print_id)
-            curves = store.decode_layer_shares(record.layer_shares) if record else {}
+            if record is None or record.finished_at is not None:
+                return
+            curves = store.decode_layer_shares(record.layer_shares)
 
             for row in await store.list_filaments(db, self.current_print_id):
                 if row.slot_index is None or row.spent_at is not None:
@@ -424,6 +500,7 @@ class PrinterListener:
 
                 if row.spool_id is None:
                     await store.set_filament_spool(db, int(row.id), current, manual=False)
+                    await self._require_tracking(db)
                     await db.commit()
                     logger.info(
                         "printer %s: slot %s resolved to spool %s after the print had started",
@@ -449,7 +526,9 @@ class PrinterListener:
                     )
                     continue
 
-                if await service.split_filament_row(db, int(row.id), at, current):
+                if await service.split_filament_row(
+                    db, int(row.id), at, current, require_tracking=self._require_tracking
+                ):
                     logger.info(
                         "printer %s: slot %s changed from spool %s to %s at %.0f%% of its filament",
                         self.printer_id,
@@ -461,23 +540,32 @@ class PrinterListener:
 
     async def publish_status(self) -> None:
         """Write what this listener knows into the table the page reads."""
+        if self.pause.requested:
+            return
+        try:
+            async with self.sessions() as db:
+                await self._write_status(db)
+                await db.commit()
+        except TrackingPaused:
+            await self._record_interruption()
+
+    async def _write_status(self, db: AsyncSession) -> None:
         from . import store
 
-        async with self.sessions() as db:
-            await store.upsert_printer_status(
-                db,
-                printer_id=self.printer_id,
-                printer_name=self.printer_name,
-                connected=self.connected,
-                tracking_enabled=True,
-                updated_at=datetime.now(timezone.utc),
-                current_print_id=self.current_print_id,
-                current_file_name=self.current_file_name,
-                progress_percent=progress_of(self.state),
-                layer_num=layer_of(self.state),
-                total_layer_num=total_layers_of(self.state),
-                remaining_minutes=remaining_minutes_of(self.state),
-                active_slot_index=self._active_slot_index(),
-                last_error=self.last_error,
-            )
-            await db.commit()
+        await store.upsert_printer_status(
+            db,
+            printer_id=self.printer_id,
+            printer_name=self.printer_name,
+            connected=self.connected,
+            tracking_enabled=True,
+            updated_at=datetime.now(timezone.utc),
+            current_print_id=self.current_print_id,
+            current_file_name=self.current_file_name,
+            progress_percent=progress_of(self.state),
+            layer_num=layer_of(self.state),
+            total_layer_num=total_layers_of(self.state),
+            remaining_minutes=remaining_minutes_of(self.state),
+            active_slot_index=self._active_slot_index(),
+            last_error=self.last_error,
+        )
+        await self._require_tracking(db)
