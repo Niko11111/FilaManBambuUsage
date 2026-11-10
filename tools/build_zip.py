@@ -57,7 +57,8 @@ SEMVER_PATTERN = re.compile(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$")
 
 MAX_FILE_SIZE = 1 * 1024 * 1024
 
-MAX_ICON_BYTES = 64 * 1024
+MAX_ICON_BYTES = 4 * 1024
+MAX_LEGACY_SVG_BYTES = 64 * 1024
 SVG_NAMESPACE = "{http://www.w3.org/2000/svg}"
 SVG_ELEMENTS = {"svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "title", "desc"}
 SVG_ATTRIBUTES = {
@@ -84,7 +85,7 @@ class ValidationError(Exception):
     """A packaging fault FilaMan would reject in exactly the same way."""
 
 
-def validate_icon(plugin_dir: Path, icon: str) -> None:
+def validate_icon(plugin_dir: Path, icon: str, *, max_bytes: int = MAX_ICON_BYTES) -> None:
     """Mirror FilaMan's plugin_icon_service.py without requiring its app runtime."""
     try:
         if (
@@ -99,9 +100,9 @@ def validate_icon(plugin_dir: Path, icon: str) -> None:
         if not path.is_relative_to(plugin_dir.resolve()):
             raise ValueError("icon must stay within the plugin package")
         with path.open("rb") as stream:
-            data = stream.read(MAX_ICON_BYTES + 1)
-        if len(data) > MAX_ICON_BYTES:
-            raise ValueError("icon must be at most 64 KiB")
+            data = stream.read(max_bytes + 1)
+        if len(data) > max_bytes:
+            raise ValueError(f"icon must be at most {max_bytes // 1024} KiB")
         source = data.decode("utf-8")
         if "<!" in source or re.search(r"<\?(?!xml\s)", source, re.IGNORECASE):
             raise ValueError("icon must not contain declarations, entities or comments")
@@ -151,7 +152,7 @@ def validate_extensions(plugin_dir: Path, files: list[Path]) -> None:
     for path in files:
         suffix = path.suffix.lower()
         if suffix == ".svg":
-            validate_icon(plugin_dir, str(path.relative_to(plugin_dir)))
+            validate_icon(plugin_dir, str(path.relative_to(plugin_dir)), max_bytes=MAX_LEGACY_SVG_BYTES)
         if suffix and suffix not in ALLOWED_EXTENSIONS:
             rel = path.relative_to(plugin_dir)
             raise ValidationError(
@@ -414,14 +415,18 @@ def selftest() -> int:
             ("SVG declaration", b'<!DOCTYPE svg><svg xmlns="http://www.w3.org/2000/svg"/>'),
             ("invalid SVG XML", b'<svg'),
             ("invalid SVG encoding", b'\xff'),
-            ("SVG over 64 KiB", svg + b' ' * (65537 - len(svg))),
+            ("declared icon over 4 KiB", svg.ljust(4097)),
         ):
             (staged / "icon.svg").write_bytes(content)
             expect_rejected(label)
-        (staged / "icon.svg").write_bytes(svg + b' ' * (65536 - len(svg)))
+        (staged / "icon.svg").write_bytes(svg.ljust(4096))
         validate(staged)
         (staged / "icon.svg").write_bytes(original_icon)
 
+        (staged / "extra.svg").write_bytes(svg.ljust(65536))
+        validate(staged)
+        (staged / "extra.svg").write_bytes(svg.ljust(65537))
+        expect_rejected("undeclared SVG over 64 KiB")
         (staged / "extra.svg").write_bytes(b'<svg xmlns="http://www.w3.org/2000/svg"><style/></svg>')
         expect_rejected("undeclared invalid SVG")
         (staged / "extra.svg").unlink()
