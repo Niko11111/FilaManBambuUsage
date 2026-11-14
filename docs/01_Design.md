@@ -122,6 +122,23 @@ The printer list changes at runtime. The plugin reconciles against it
 periodically and starts or stops listeners accordingly, rather than relying on
 a restart.
 
+**FilaMan's switch for the whole plugin** is part of that reconciliation.
+FilaMan records it as `InstalledPlugin.is_active` and stops serving a switched
+off plugin's routes, but it cannot stop a background task the plugin started
+itself. So once a minute, with the printer list, the plugin reads its own flag
+and treats "off" exactly like tracking switched off for every printer: the
+listeners close and nothing is booked. A print that was running stays open.
+When the plugin is switched back on, the next listener sees it still running
+under the same `subtask_id`, takes it over, and books it at its end as though
+nothing had happened, which is right, because the filament was used either way.
+
+Asking once a minute rather than on every printer report means switching off
+takes effect within one refresh interval, not instantly. A print ending in that
+minute is still booked. A check on every report, about one a second per printer,
+would buy nothing worth that load. A missing row counts as switched on: only an
+explicit "off" stops the tracking, so a hand copied development install does not
+quietly never track.
+
 ## 6. The course of a print
 
 ### 6.1 Two sources, unequal data
@@ -313,12 +330,18 @@ Each of these needs defined behaviour. Quietly doing nothing is not behaviour.
 | Stopped by a person against stopped by a fault | A fault leaves a code behind in `print_error` or `mc_print_error_code`, a print somebody cancelled does not. **This reading is an assumption**, taken from how the reports are commonly understood and not verified against a printer, so the code is stored with the print: the first real fault shows whether the rule stands the right way round. |
 | 3MF unavailable (FTPS fails, file deleted) | Record the print with its file name and no consumption, status "3mf missing". Never drop it silently, or the print disappears without trace. |
 | Printer offline or MQTT drops | The listener reports its state on the page and reconnects with backoff. Other printers keep running. |
-| Plugin starts mid print | The beginning was missed and the mapping is unknown. The print is recorded as "incomplete" from the next state onwards and is not deducted. |
+| Plugin starts mid print | If the print is already recorded under its `subtask_id` (FilaMan restarted, or the plugin was switched off and on), the new listener takes it over and books it at its end as usual. Otherwise the beginning was missed and the mapping is unknown. The print is recorded as "incomplete" from the next state onwards and is not deducted. |
+| Print ended while nobody listened (plugin switched off, FilaMan restarting) | The first report a new listener gets already says FINISH or FAILED. If a print recorded under that report's `subtask_id` is still open, it is closed with that outcome and booked by the usual rules: the filament was used either way. Its end time is when the plugin heard of it. A job never recorded, or one closed long ago, is left alone. |
+| Plugin switched off in FilaMan | Treated like tracking switched off for every printer, within one refresh interval (60 s). Nothing is booked while it is off, and a running print stays open, see the two rows above and section 5. |
 | Two slicer filaments on the same spool | Sum the consumption and deduct **once**, not twice. |
 | Spool swapped while the print runs | The filament row is **split** where the change happened: the old spool keeps the share up to that point, the new one gets the rest. Nothing is split when the progress is unknown, and a slot that momentarily resolves to nothing is ignored, because a tray is briefly empty during a swap. See below. |
 | The AMS switches to a **different tray** by itself when a spool runs empty | **Not detected.** The spool in the original tray does not change, so the comparison sees nothing. It would need `ams.tray_now`, a field `03_Bambu_Data_Sources.md` does not establish yet. Known limit, to be picked up once it is proven on a real printer. |
 | Remaining weight would go negative | `record_consumption()` clamps at 0 itself. The plugin relies on that and does not do its own arithmetic. |
 | Duplicate MQTT message | A print is identified by `subtask_id`, or by file name plus start time. Rows already deducted carry a flag and are never deducted twice. |
+| A new print starts while an older one of the same printer is still open | The older one ended unseen (plugin off, FilaMan restarting, a job change overtaking its end). A printer runs one job at a time, so it is closed when the new one is recorded: a running one as `end_unseen` ("end not seen"), bookable by hand only, one that was never bookable keeps its status. |
+| The printer reports the `subtask_id` of a print that has already ended | Refused with an error on the printer rather than taken over: taking it over would overwrite the old print's outcome and, on a cancel, rebook what it was charged. Whether firmware reuses ids is not established. `subtask_id` `"0"` counts as no id at all. |
+| Two callers book the same row at once (two tabs, or a person and the tracker) | Every write that moves grams is conditional on the row still being as the caller read it (`store._row_unchanged`). The database lets one through; the other books nothing, and a correction on a changed row is refused. |
+| A print is cancelled seconds after its start, while its 3MF is still downloading | Each report runs as its own task. A lock per listener makes acting on them wait their turn, so the end cannot overtake the start. |
 
 ### 7.1 Why a swapped spool splits the row
 
@@ -342,9 +365,16 @@ normal case and shows nothing extra on the page.
 ### 8.1 The asset constraint
 
 `plugin_service.py` checks every file in the ZIP against an extension allow
-list: `.py .json .md .txt .cfg .ini .yaml .yml .toml .html`. **No `.png`,
-`.css`, `.js`, `.svg`.** This is not a recommendation, it is a hard rejection at
-install time.
+list: `.py .json .md .txt .cfg .ini .yaml .yml .toml .html`, and `.svg` since
+FilaMan 2.0.5. **No `.png`, `.css`, `.js`.** This is not a recommendation, it is
+a hard rejection at install time.
+
+The one SVG in the package is `icon.svg`, named as `icon` in the manifest, which
+FilaMan draws in its sidebar. It has to stay within FilaMan's SVG rules (a few
+drawing elements, no styles, no references, at most 4 KB) and draws in
+`currentColor` so it follows the theme. `build_zip.py` checks the same rules.
+Carrying it is why this plugin needs FilaMan 2.0.6: 2.0.4 and older refuse the
+ZIP outright, and 2.0.5 accepted SVGs before its icon handling was fixed.
 
 That forces two things:
 
@@ -380,7 +410,8 @@ cent, red for slower and green for faster. Only for a print that ran to its end:
 one stopped at a third would read "-70%" in green as though it had been fast.
 The colour follows the percentage rather than the minutes, because half an hour
 on a two day print is not a print that went wrong. Each carries a small monochrome icon. They live inline in `page.html` as
-`<template>` elements, because the plugin ZIP rejects `.svg`, and every one of
+`<template>` elements, because nothing beside `page.html` is served to the
+page, and every one of
 them draws in `currentColor` so it takes the colour of whatever it sits next
 to, in all three themes.
 
@@ -473,7 +504,8 @@ and `plugin-view.astro` renders `Layout.astro` around an iframe of
 `/plugin-page/<slug>`. The drawer stays, and this page has to do nothing for it.
 
 **That is the whole mechanism, and it is not ours.** It arrived in FilaMan
-1.2.45, which is therefore the version this plugin needs.
+1.2.45, which was this plugin's minimum until 1.0.0 raised it to 2.0.6 for the
+sidebar icon, see 8.1.
 
 Until then it was different, and the history explains what is left in the code.
 FilaMan served a plugin page raw: the navigation linked straight at `page_url`,
@@ -499,12 +531,12 @@ else about the page changes either way.
 
 Three consequences are worth writing down:
 
-- **The minimum version cannot be enforced, only stated.** A manifest carries
+- **The minimum version is not declared in the manifest.** A manifest carries
   `plugin_key`, `name`, `version`, `description` and `author`, and FilaMan checks
-  no version of its own against it. On an older FilaMan the page still works, it
-  simply stands there without the drawer, with its own link as the way back. The
-  requirement is named in the README and in the manifest `description`, which is
-  the text FilaMan shows in its plugin list.
+  no version of its own against it. What holds the line in practice is the icon:
+  a FilaMan before 2.0.5 refuses the ZIP, see 8.1. The requirement is named in
+  the README, in the manifest `description`, which is the text FilaMan shows in
+  its plugin list, and as `min_filaman_version` in FilaMan's plugin catalog.
 - **The page's translation attribute stays `data-bambu-i18n`.** The original
   reason is gone: it existed because the borrowed layout module ran
   `translatePage()` in our document, and its `t()` returns the key itself for a
@@ -662,6 +694,8 @@ consequences are worked out where they matter:
   and the booking land in the same commit. A failure rolls back only that
   spool's marks, and everything already committed stays booked and is never
   booked twice, because a row carrying a `spent_at` is not picked up again.
+  The mark itself only succeeds on a row that is still unbooked, so a second
+  caller that read the same rows a moment earlier claims and books nothing.
 
 A caller must therefore not wrap these functions in a transaction of its own.
 

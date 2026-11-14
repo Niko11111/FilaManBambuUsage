@@ -57,7 +57,9 @@ SEMVER_PATTERN = re.compile(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$")
 
 MAX_FILE_SIZE = 1 * 1024 * 1024
 
+# Icon limits, mirrored from FilaMan's app/services/plugin_icon_service.py.
 MAX_ICON_BYTES = 4 * 1024
+MAX_ICON_PATH_LENGTH = 250
 MAX_LEGACY_SVG_BYTES = 64 * 1024
 SVG_NAMESPACE = "{http://www.w3.org/2000/svg}"
 SVG_ELEMENTS = {"svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "title", "desc"}
@@ -90,7 +92,7 @@ def validate_icon(plugin_dir: Path, icon: str, *, max_bytes: int = MAX_ICON_BYTE
     try:
         if (
             not isinstance(icon, str)
-            or len(icon) > 250
+            or len(icon) > MAX_ICON_PATH_LENGTH
             or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*\.svg", icon)
             or any(part in ("", ".", "..") for part in icon.split("/"))
             or plugin_dir.is_symlink()

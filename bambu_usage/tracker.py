@@ -42,8 +42,11 @@ from typing import TYPE_CHECKING, Any
 
 from . import rules
 from .report import (
+    ACTIVE_STATES,
     STATE_FINISH,
+    TRANSITION_ENDED_UNSEEN,
     TRANSITION_STARTED,
+    Transition,
     active_tray,
     completed_fraction,
     describe_job,
@@ -54,6 +57,7 @@ from .report import (
     merge_report,
     progress_of,
     remaining_minutes_of,
+    subtask_of,
     total_layers_of,
     tray_tags,
 )
@@ -107,6 +111,10 @@ class PrinterListener:
     state: dict = field(default_factory=dict)
     client: Any = None
     last_assignment_check: datetime | None = None
+    # Every report runs as its own task, and acting on one can take a minute
+    # (the 3MF download). Without this, the end of a print cancelled within
+    # seconds would overtake its own start and leave it "running" for good.
+    acting: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def describes(self, printer: BambuPrinter) -> bool:
         """Whether this listener still matches how FilaMan knows the printer.
@@ -203,6 +211,15 @@ class PrinterListener:
         transition = detect_transition(self.state, merged)
         self.state = merged
 
+        # Merging stays outside the lock, so the state always follows the order
+        # the reports arrived in. Acting on them waits its turn, in that order.
+        async with self.acting:
+            await self._act_on(transition, joined_mid_print=joined_mid_print, moment=moment)
+
+    async def _act_on(
+        self, transition: Transition | None, *, joined_mid_print: bool, moment: datetime
+    ) -> None:
+        """Do what one report calls for. Catches everything, see handle_message."""
         if transition is None:
             try:
                 await self._watch_assignments(moment)
@@ -214,6 +231,8 @@ class PrinterListener:
         try:
             if transition.kind == TRANSITION_STARTED:
                 await self._begin_print(joined_mid_print=joined_mid_print, at=moment)
+            elif transition.kind == TRANSITION_ENDED_UNSEEN:
+                await self._end_unseen_print(transition.gcode_state, at=moment)
             else:
                 await self._end_print(transition.gcode_state, at=moment)
         except Exception as exc:
@@ -369,6 +388,41 @@ class PrinterListener:
         self.current_file_name = None
         await self.publish_status()
 
+    async def _end_unseen_print(self, gcode_state: str | None, at: datetime) -> None:
+        """Close a print of ours that ended while nobody was listening.
+
+        The plugin was switched off, or FilaMan restarted, while the print ran,
+        and the first thing this listener hears is that it is over. The printer
+        still reports the job's subtask id, and only a print recorded under that
+        id and still open is closed, through the same path as an end that was
+        seen: the filament was used either way. Anything else, a print of
+        yesterday that was booked long ago or one this plugin never recorded, is
+        left alone.
+
+        The end time is when we heard of it, since the printer does not say
+        when it finished. docs/01_Design.md, section 7.
+        """
+        from . import store
+        from .models import OPEN_STATUSES
+
+        subtask_id = subtask_of(self.state)
+        if subtask_id is None:
+            return
+
+        async with self.sessions() as db:
+            record = await store.find_print_by_subtask(db, self.printer_id, subtask_id)
+
+        if record is None or record.status not in OPEN_STATUSES or record.finished_at is not None:
+            return
+
+        logger.info(
+            "printer %s: print %s ended while the plugin was not listening",
+            self.printer_id,
+            record.id,
+        )
+        self.current_print_id = int(record.id)
+        await self._end_print(gcode_state, at=at)
+
     async def _watch_assignments(self, at: datetime) -> None:
         """Notice a spool being swapped while the print is running.
 
@@ -393,6 +447,11 @@ class PrinterListener:
         on two spools, and a guess is expensive twice over.
         """
         if self.current_print_id is None:
+            return
+
+        # A print that has ended but could not be closed (the booking failed)
+        # is still current, and a spool swapped after it must not be charged.
+        if gcode_state_of(self.state) not in ACTIVE_STATES:
             return
 
         if self.last_assignment_check is not None:
