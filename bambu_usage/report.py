@@ -38,9 +38,15 @@ PRINT_TYPE_LOCAL = "local"
 
 TRANSITION_STARTED = "started"
 TRANSITION_ENDED = "ended"
+# The first state ever seen is already a final one: a print may have ended while
+# nobody was listening. Only the caller can tell whether it was one of ours.
+TRANSITION_ENDED_UNSEEN = "ended_unseen"
 
 # Where a report keeps the fields this plugin reads.
 PRINT_SECTION = "print"
+
+# subtask_id values that identify no job.
+NO_SUBTASK_VALUES = (None, "", "0", 0)
 
 # Where the AMS state sits inside a report, and what one tray calls its tag.
 AMS_SECTION = "ams"
@@ -136,9 +142,14 @@ def gcode_state_of(state: dict) -> str | None:
 
 
 def subtask_of(state: dict) -> str | None:
-    """The job identifier, or None if the printer reports none."""
+    """The job identifier, or None if the printer reports none.
+
+    "0" counts as none. It is what a print without a job behind it is commonly
+    reported with, and taken as an id it would make every such print after the
+    first one look like the first one again.
+    """
     value = state.get(PRINT_SECTION, {}).get("subtask_id")
-    return str(value) if value not in (None, "") else None
+    return str(value) if value not in NO_SUBTASK_VALUES else None
 
 
 def detect_transition(previous: dict, current: dict) -> Transition | None:
@@ -151,6 +162,10 @@ def detect_transition(previous: dict, current: dict) -> Transition | None:
     A first report that already shows an active state is a start as well. That
     is the plugin attaching in the middle of a print, and the caller is the one
     that decides such a print can never be booked.
+
+    A first report that already shows a final state is an end nobody saw, the
+    case of a print that ended while the plugin was switched off or FilaMan was
+    restarting.
     """
     before = gcode_state_of(previous)
     after = gcode_state_of(current)
@@ -163,6 +178,9 @@ def detect_transition(previous: dict, current: dict) -> Transition | None:
 
     if after in FINAL_STATES and before in ACTIVE_STATES:
         return Transition(TRANSITION_ENDED, gcode_state=after)
+
+    if after in FINAL_STATES and before is None:
+        return Transition(TRANSITION_ENDED_UNSEEN, gcode_state=after)
 
     return None
 

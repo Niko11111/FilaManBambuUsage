@@ -261,6 +261,22 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(await store.list_prints(db)), 1)
             self.assertEqual(len(await store.list_filaments(db, first)), 2)
 
+    async def test_a_reused_id_does_not_take_over_an_ended_print(self):
+        # Booked in full, then the printer reports the same id for a new job.
+        # Taking the old print over would let a cancel rebook what it was
+        # charged.
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        async with self.sessions() as db:
+            first = await self.start(db, [0, 1])
+            await service.finish_print(db, first, models.STATUS_FINISHED, AUTO, NOW)
+
+            with self.assertRaises(service.UsageError):
+                await self.start(db, [0, 1])
+
+            self.assertEqual((await store.get_print(db, first)).status, models.STATUS_FINISHED)
+
     async def test_two_filaments_on_one_spool_are_booked_once(self):
         # The multi colour case: one spool, one event, the sum of both rows.
         self.slots = {"0-0": 7, "0-1": 7}
@@ -289,6 +305,43 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(self.consumptions), 2)
         self.assertEqual(booked_again, {})
+
+    async def test_two_callers_on_the_same_rows_book_once(self):
+        # Two tabs, or a person and the tracker on another worker, read the same
+        # open rows. The second one to write must find them taken.
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            await service.finish_print(db, print_id, models.STATUS_FINISHED, MANUAL, NOW)
+            read_before = await store.list_filaments(db, print_id)
+
+            await service.spend_print(db, print_id)
+            stale = mock.AsyncMock(return_value=read_before)
+            with mock.patch.object(store, "list_filaments", stale):
+                booked_again = await service.spend_print(db, print_id)
+
+        self.assertEqual(len(self.consumptions), 2)
+        self.assertEqual(booked_again, {})
+
+    async def test_a_correction_on_a_row_changed_meanwhile_is_refused(self):
+        self.slots = {"0-0": 7, "0-1": 8}
+        self.have_spools(7, 8)
+
+        async with self.sessions() as db:
+            print_id = await self.start(db, [0, 1])
+            await service.finish_print(db, print_id, models.STATUS_FINISHED, AUTO, NOW)
+            row = (await store.list_filaments(db, print_id))[0]
+            await service.correct_usage(db, row.id, 50.0)
+
+            stale = mock.AsyncMock(return_value=row)
+            with mock.patch.object(store, "get_filament", stale):
+                with self.assertRaises(service.UsageError):
+                    await service.correct_usage(db, row.id, 60.0)
+
+            self.assertEqual((await store.get_filament(db, row.id)).spent_grams, 50.0)
+        self.assertEqual(self.consumptions[-1], (7, 8.8, "correction"))
 
     async def test_a_print_without_a_resolvable_slot_stays_open(self):
         # No assignment, no guess. The row waits for a human.
@@ -656,7 +709,7 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
             row = (await store.list_filaments(db, print_id))[0]
 
             # What an early booking leaves behind: the full estimate, spent.
-            await store.mark_filament_spent(db, row.id, 41.2, NOW)
+            await store.mark_filament_spent(db, row.id, 41.2, NOW, booked_grams=None)
             await db.commit()
 
             await service.finish_print(
@@ -685,7 +738,7 @@ class BookingTest(unittest.IsolatedAsyncioTestCase):
         async with self.sessions() as db:
             print_id = await self.start(db, [0, 1], metadata=metadata)
             row = (await store.list_filaments(db, print_id))[0]
-            await store.override_filament_amount(db, row.id, 30.0, NOW)
+            await store.override_filament_amount(db, row.id, 30.0, NOW, booked_grams=None)
             await db.commit()
             self.adjustments.clear()
             self.consumptions.clear()

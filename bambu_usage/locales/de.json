@@ -106,7 +106,8 @@
     "failed": "fehlgeschlagen",
     "cancelled": "abgebrochen",
     "incomplete": "mittendrin dazugekommen",
-    "no3mf": "3MF fehlt"
+    "no3mf": "3MF fehlt",
+    "endUnseen": "Ende nicht mitbekommen"
   },
   "settings": {
     "heading": "Einstellungen",

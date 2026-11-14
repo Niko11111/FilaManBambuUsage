@@ -253,6 +253,19 @@ class StoreTest(unittest.IsolatedAsyncioTestCase):
                     await store.set_print_status(db, print_id, models.STATUS_FINISHED)
                     await db.commit()
 
+    async def test_an_ended_unbookable_print_is_not_open_any_more(self):
+        # An incomplete or 3MF-less print keeps its status when it ends, so only
+        # finished_at says it is over. Found as open, it would be stamped with
+        # the end of whichever print a restarted listener sees end next.
+        for status in (models.STATUS_INCOMPLETE, models.STATUS_NO_3MF):
+            with self.subTest(status=status):
+                async with self.sessions() as db:
+                    print_id = await self.make_print(db, subtask_id=f"ended-{status}", status=status)
+                    await store.set_print_status(db, print_id, status, finished_at=NOW)
+                    await db.commit()
+
+                    self.assertIsNone(await store.find_open_print(db, 1))
+
     async def test_filament_rows_keep_the_slicer_order(self):
         async with self.sessions() as db:
             print_id = await self.make_print(db)
@@ -289,7 +302,7 @@ class StoreTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await store.booking_state(db, print_id), (1, 0))
 
             rows = await store.list_filaments(db, print_id)
-            await store.mark_filament_spent(db, rows[0].id, 41.2, NOW)
+            await store.mark_filament_spent(db, rows[0].id, 41.2, NOW, booked_grams=None)
             await db.commit()
 
             self.assertEqual(await store.booking_state(db, print_id), (0, 1))
@@ -303,7 +316,7 @@ class StoreTest(unittest.IsolatedAsyncioTestCase):
             await db.commit()
 
             row = (await store.list_filaments(db, print_id))[0]
-            await store.override_filament_amount(db, row.id, 30.0, NOW)
+            await store.override_filament_amount(db, row.id, 30.0, NOW, booked_grams=None)
             await db.commit()
 
             corrected = await store.get_filament(db, row.id)

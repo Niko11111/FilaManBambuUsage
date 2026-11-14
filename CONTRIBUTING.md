@@ -35,10 +35,13 @@ Enforced in FilaMan's `plugin_service.py`. Break one and the installation is
 rejected.
 
 - **File extensions in the ZIP are an allow list:** `.py .json .md .txt .cfg
-  .ini .yaml .yml .toml .html`. **No `.png`, `.css`, `.js`, `.svg`.** That is
-  why `page.html` is a single file with inline `<style>` and `<script>`, why the
-  icons are inline `<template>` elements, and why images only ever leave through
-  a route at runtime. Translations do ship, because `.json` is allowed.
+  .ini .yaml .yml .toml .html`, plus `.svg` since FilaMan 2.0.5. **No `.png`,
+  `.css`, `.js`.** That is why `page.html` is a single file with inline
+  `<style>` and `<script>`, why the page's icons are inline `<template>`
+  elements, and why images only ever leave through a route at runtime.
+  Translations do ship, because `.json` is allowed, and so does the sidebar
+  icon `icon.svg`, which has to pass FilaMan's SVG rules (checked by
+  `build_zip.py`).
 - Maximum ZIP size is 10 MB, and **1 MB for a single file**.
 - **No hidden files.** A `.DS_Store` from a Finder window is enough to have the
   upload refused. `build_zip.py` leaves those out while packing and names them

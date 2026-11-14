@@ -65,6 +65,9 @@ STATUS_FAILED = "failed"
 STATUS_CANCELLED = "cancelled"
 STATUS_INCOMPLETE = "incomplete"
 STATUS_NO_3MF = "no_3mf"
+# Its end went unseen: a newer print had already started on the same printer
+# when this plugin next heard from it. Closed, and bookable by hand only.
+STATUS_END_UNSEEN = "end_unseen"
 
 # A print in one of these has not ended yet, whatever else is true about it. A
 # listener that reattaches after a restart looks for exactly these.

@@ -16,7 +16,9 @@ Plugins are uploaded as a ZIP through Admin, Plugins.
 2. **ZIP integrity.**
 3. **Per file, walking the extracted tree**, in this order:
    - **Extension allow list**, `ALLOWED_EXTENSIONS`:
-     `.py .json .md .txt .cfg .ini .yaml .yml .toml .html`
+     `.py .json .md .txt .cfg .ini .yaml .yml .toml .html`, plus `.svg` since
+     2.0.5. An SVG is parsed and limited to a small set of drawing elements,
+     64 KB, or 4 KB for the one the manifest names as `icon`
      Anything else fails with `forbidden_extension`. A file without any
      extension passes, the check reads `if suffix and suffix not in ...`.
    - **1 MB per file**, `file_too_large`. Far below the 10 MB for the ZIP.
@@ -51,9 +53,9 @@ top level of the ZIP to decide whether files sit at the root or in a single
 folder, and installation copies with `shutil.copytree`. This is what allows
 `locales/` to ship inside the package.
 
-> **The consequence that matters most here:** no `.png`, `.css`, `.js` or
-> `.svg` in the ZIP. The page is a single HTML file and images are served at
-> runtime through a route. See `01_Design.md`, section 8.1.
+> **The consequence that matters most here:** no `.png`, `.css` or `.js` in
+> the ZIP, and an `.svg` only from 2.0.5 on. The page is a single HTML file and
+> images are served at runtime through a route. See `01_Design.md`, section 8.1.
 
 ## 2. Manifest
 
@@ -213,7 +215,9 @@ Either way the listeners need:
 
 Deactivated plugins are recorded in `InstalledPlugin` with `is_active = False`.
 The manager skips printers whose `driver_key` belongs to a deactivated plugin.
-This plugin has to observe its own state in the same way.
+This plugin has to observe its own state in the same way. It reads its own
+`is_active` once a minute while reconciling the printer list and treats "off"
+like tracking switched off for every printer, see `01_Design.md` section 5.
 
 One more consequence of finding 1: `_mount_plugin_routers()` wraps the import in
 `try/except Exception` and only logs a warning. **An import error in `router.py`
@@ -295,6 +299,7 @@ exception: FastAPI resolves dependencies while the route decorators run, so
 |---|---|
 | `app.core.database.async_session_maker`, `engine` | database access |
 | `app.core.event_bus.event_bus` | refreshing the page |
+| `app.models.plugin.InstalledPlugin` | reading this plugin's own `is_active` switch |
 | `app.models.printer.Printer` | finding printers with `driver_key == "bambulab"`, reading `driver_config` |
 | `app.models.printer.PrinterSlot` | `slot_no`, `custom_fields["slot_index"]` |
 | `app.models.printer.PrinterSlotAssignment` | `spool_id` per slot |

@@ -43,7 +43,7 @@ is already set up in FilaMan.
 
 ## Status
 
-**Version 0.9.0. It works, and it has booked a real print.**
+**Version 1.0.0. It works, and it has booked a real print.**
 
 ### Proven on hardware
 
@@ -90,7 +90,7 @@ scale writes the tag it read, which for a third party spool is an NTAG the
 printer never reports. So the tag route covers spools carrying their Bambu uuid,
 and for the rest a spool is picked by hand once, or FilaMan's scale assigns it.
 
-The test suite has 232 tests and runs on the standard library alone.
+The test suite runs on the standard library alone.
 
 ## How it works
 
@@ -132,9 +132,10 @@ before the endpoints answer.
 
 ## Requirements
 
-- **FilaMan 1.2.45 or newer.** That release renders a plugin page inside the
-  navigation shell, which this page relies on. On an older FilaMan the page
-  still works, but stands on its own without the navigation around it
+- **FilaMan 2.0.6 or newer.** The package carries its own sidebar icon as an
+  SVG, and FilaMan accepts `.svg` in a plugin ZIP only from 2.0.5 on, with the
+  icon handling fixed in 2.0.6. An older FilaMan refuses the upload. Version
+  0.9.0 is the last one that installs on 1.2.45 to 2.0.4
 - At least one printer with `driver_key == "bambulab"`, which is where host,
   serial and access code come from
 - The printer reachable on the LAN over MQTT and FTPS. The Bambu cloud is not

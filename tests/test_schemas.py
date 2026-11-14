@@ -14,7 +14,16 @@ from datetime import datetime, timedelta, timezone
 from ._support import HAS_TEST_DEPENDENCIES
 
 if HAS_TEST_DEPENDENCIES:
-    from bambu_usage.schemas import FilamentUsage, PrinterStatus, PrintRecord
+    from pydantic import ValidationError
+
+    from bambu_usage.schemas import (
+        AssignSpoolRequest,
+        CorrectUsageRequest,
+        FilamentUsage,
+        PluginSettings,
+        PrinterStatus,
+        PrintRecord,
+    )
 
 NAIVE = datetime(2026, 8, 20, 21, 25, 36)
 
@@ -73,6 +82,29 @@ class UtcDatetimeTest(unittest.TestCase):
 
         self.assertEqual(usage.spent_at.tzinfo, timezone.utc)
         self.assertEqual(status.updated_at.tzinfo, timezone.utc)
+
+
+@unittest.skipUnless(HAS_TEST_DEPENDENCIES, "needs pydantic")
+class RequestBoundsTest(unittest.TestCase):
+    def test_a_correction_refuses_what_is_not_a_number_of_grams(self):
+        # Infinity would clamp the spool to zero and leave a history that no
+        # longer serialises as JSON.
+        for grams in (float("inf"), float("nan"), -1, 10_001):
+            with self.subTest(grams=grams), self.assertRaises(ValidationError):
+                CorrectUsageRequest(grams=grams)
+
+    def test_a_real_correction_passes(self):
+        self.assertEqual(CorrectUsageRequest(grams=41.2).grams, 41.2)
+
+    def test_ids_beyond_any_database_column_are_refused(self):
+        with self.assertRaises(ValidationError):
+            PluginSettings(printer_id=99999999999999999999)
+        with self.assertRaises(ValidationError):
+            AssignSpoolRequest(spool_id=99999999999999999999)
+
+    def test_a_retention_whose_cutoff_would_overflow_is_refused(self):
+        with self.assertRaises(ValidationError):
+            PluginSettings(history_retention_days=10**7)
 
 
 if __name__ == "__main__":

@@ -25,6 +25,7 @@ from bambu_usage.report import (
     STATE_PREPARE,
     STATE_RUNNING,
     TRANSITION_ENDED,
+    TRANSITION_ENDED_UNSEEN,
     TRANSITION_STARTED,
     completed_fraction,
     describe_job,
@@ -125,6 +126,24 @@ class DetectTransitionTest(unittest.TestCase):
         )
         self.assertEqual(found.kind, TRANSITION_STARTED)
 
+    def test_the_first_report_of_a_finished_printer_is_an_unseen_end(self):
+        # The print may have ended while the plugin was switched off or FilaMan
+        # restarted. Whether it is one of ours is the caller's business.
+        for state in (STATE_FINISH, STATE_FAILED):
+            with self.subTest(state=state):
+                found = detect_transition({}, report(gcode_state=state))
+                self.assertEqual(found.kind, TRANSITION_ENDED_UNSEEN)
+                self.assertEqual(found.gcode_state, state)
+
+    def test_an_unseen_end_needs_the_state_to_have_been_unknown(self):
+        # Idle and then finished is not an end anybody missed.
+        self.assertIsNone(
+            detect_transition(report(gcode_state=STATE_IDLE), report(gcode_state=STATE_FINISH))
+        )
+        self.assertIsNone(
+            detect_transition(report(gcode_state=STATE_FINISH), report(gcode_state=STATE_FINISH))
+        )
+
     def test_finishing_and_going_idle_is_not_an_event(self):
         self.assertIsNone(
             detect_transition(report(gcode_state=STATE_FINISH), report(gcode_state=STATE_IDLE))
@@ -180,6 +199,13 @@ class DescribeJobTest(unittest.TestCase):
 
     def test_an_empty_subtask_id_counts_as_none(self):
         self.assertIsNone(describe_job(report(subtask_id="")).subtask_id)
+
+    def test_a_zero_subtask_id_counts_as_none(self):
+        # Taken as an id, every job-less print after the first would be
+        # mistaken for the first one.
+        for value in ("0", 0):
+            with self.subTest(value=value):
+                self.assertIsNone(describe_job(report(subtask_id=value)).subtask_id)
 
 
 class ProgressTest(unittest.TestCase):

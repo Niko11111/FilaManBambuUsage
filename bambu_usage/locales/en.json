@@ -106,7 +106,8 @@
     "failed": "failed",
     "cancelled": "cancelled",
     "incomplete": "joined in the middle",
-    "no3mf": "3MF missing"
+    "no3mf": "3MF missing",
+    "endUnseen": "end not seen"
   },
   "settings": {
     "heading": "Settings",

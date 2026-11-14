@@ -117,6 +117,11 @@ async def start_print(
         existing = await store.find_print_by_subtask(db, printer_id, subtask_id)
     else:
         existing = await store.find_print_by_start(db, printer_id, file_name, moment)
+    if existing is not None and existing.finished_at is not None:
+        # The printer reused the id of a print that has ended. Taking that one
+        # over would overwrite its outcome and, on a cancel, rebook what it was
+        # charged. Refused, so the error shows on the printer instead.
+        raise UsageError(f"print {existing.id} already ended under subtask id {subtask_id}")
     if existing is not None:
         return int(existing.id)
 
@@ -142,6 +147,9 @@ async def start_print(
         print_id,
         await _build_filament_rows(db, printer_id, metadata, ams_mapping, tray_tags or {}),
     )
+    closed = await store.close_superseded_prints(db, printer_id, print_id, moment)
+    if closed:
+        logger.info("printer %s: closed %d print(s) whose end went unseen", printer_id, closed)
     await db.commit()
 
     return print_id
@@ -361,12 +369,12 @@ async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
             continue
 
         try:
-            # A row without an amount is marked at zero rather than left open,
-            # otherwise its print would never count as fully booked.
-            for row in (r for r in pending if r.spool_id == spool_id):
-                await store.mark_filament_spent(
-                    db, row.id, rules.share_of(row, share_for(row)) or 0.0, moment
-                )
+            rows_of_spool = [row for row in pending if row.spool_id == spool_id]
+            grams = await _claim_rows(db, rows_of_spool, share_for, moment)
+            if grams <= 0:
+                # Somebody else booked these rows between our read and now.
+                await db.commit()
+                continue
             await filaman.record_consumption(db, spool, grams, moment, record.file_name)
         except (SQLAlchemyError, filaman.FilaManUnavailableError) as exc:
             await db.rollback()
@@ -385,6 +393,32 @@ async def spend_print(db: AsyncSession, print_id: int) -> dict[int, float]:
     await _refresh_spent_flag(db, print_id)
 
     return booked
+
+
+async def _claim_rows(
+    db: AsyncSession,
+    rows: list[Any],
+    share_for: Callable[[Any], float],
+    moment: datetime,
+) -> float:
+    """Mark the rows nobody else has booked yet, and return what they come to.
+
+    Only the grams of rows this call actually claimed may go onto the spool:
+    a second caller that read the same rows, another tab or the tracker on
+    another worker, claims nothing and books nothing. A row without an amount is
+    marked at zero rather than left open, otherwise its print would never count
+    as fully booked.
+    """
+    from . import store
+
+    claimed = 0.0
+    for row in rows:
+        share = rules.share_of(row, share_for(row)) or 0.0
+        if await store.mark_filament_spent(db, int(row.id), share, moment, booked_grams=None):
+            claimed += share
+        else:
+            logger.info("filament row %s was booked meanwhile, not booking it again", row.id)
+    return claimed
 
 
 async def forget_print(db: AsyncSession, print_id: int) -> None:
@@ -450,7 +484,12 @@ async def _rebook_stopped_rows(
             continue
 
         try:
-            await store.mark_filament_spent(db, int(row.id), target, moment)
+            claimed = await store.mark_filament_spent(
+                db, int(row.id), target, moment, booked_grams=float(row.spent_grams)
+            )
+            if not claimed:
+                logger.info("filament row %s changed meanwhile, not correcting it", row.id)
+                continue
             await _move_difference(db, spool, difference, moment, _STOPPED_NOTE)
         except (SQLAlchemyError, filaman.FilaManUnavailableError) as exc:
             await db.rollback()
@@ -649,7 +688,12 @@ async def correct_usage(db: AsyncSession, filament_row_id: int, grams: float) ->
     moment = datetime.now(timezone.utc)
     difference = grams - (row.spent_grams or 0.0)
 
-    await store.override_filament_amount(db, filament_row_id, grams, moment)
+    booked = row.spent_grams if row.spent_at is not None else None
+    if not await store.override_filament_amount(
+        db, filament_row_id, grams, moment, booked_grams=booked
+    ):
+        await db.rollback()
+        raise UsageError(f"filament row {filament_row_id} changed meanwhile, reload and try again")
     await _move_difference(db, spool, difference, moment, _CORRECTION_NOTE)
     await _refresh_spent_flag(db, print_id=int(row.print_id))
 

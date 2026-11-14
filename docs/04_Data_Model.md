@@ -168,13 +168,13 @@ One print job.
 |---|---|---|
 | `id` | int, PK | |
 | `printer_id` | int | no foreign key, see section 1 |
-| `subtask_id` | str, nullable | job identifier from the printer |
+| `subtask_id` | str, nullable | job identifier from the printer; `"0"` is stored as null, since it identifies no job |
 | `file_name` | str | display name |
 | `print_type` | str | `cloud`, `local` |
 | `plate_id` | int, nullable | plate from `slice_info.config` |
 | `started_at` | datetime | |
 | `finished_at` | datetime, nullable | |
-| `status` | str | `running`, `finished`, `failed`, `cancelled`, `incomplete`, `no_3mf` |
+| `status` | str | `running`, `finished`, `failed`, `cancelled`, `incomplete`, `no_3mf`, `end_unseen` |
 | `completed_fraction` | float, nullable | how far a print that was stopped got, `0.0` to `1.0`. `NULL` means unknown, and then nothing is booked |
 | `layer_shares` | text, nullable | JSON, per filament the share of its material each layer has used. The shape of the curve out of the plate gcode, never an amount, see `03_Bambu_Data_Sources.md` |
 | `stopped_at_layer` | int, nullable | which layer the printer was on when it stopped, so the curve can be read at the right place long afterwards |
@@ -195,7 +195,9 @@ creates no second print.
 The image lives in the table as a BLOB. The reasoning is in `01_Design.md`
 section 8.1: no assumption about writable paths, and FilaMan's backup covers the
 database anyway. Typical size is in the low hundreds of kilobytes, and
-`history_retention_days` bounds the growth.
+`history_retention_days` bounds the growth: once a day, the worker that owns the
+listeners deletes prints older than that (`supervisor.purge_history_if_due`).
+Bookings are not touched, a deleted print stays deducted from its spool.
 
 ### bambu_usage_filament
 

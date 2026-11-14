@@ -19,7 +19,8 @@
        in the navigation links at /plugin-view?p=<slug>, and plugin-view.astro
        renders Layout.astro around an iframe of this page. The drawer is
        already there, so this page builds nothing of its own. That route
-       arrived in FilaMan 1.2.45, which is the version this plugin needs.
+       arrived in FilaMan 1.2.45. The plugin as a whole needs 2.0.6, for
+       its sidebar icon.
        See docs/01_Design.md section 8.3.
 
        Opening the page directly by its own URL stays possible. It is then the
@@ -778,7 +779,8 @@
         failed: 'printStatus.failed',
         cancelled: 'printStatus.cancelled',
         incomplete: 'printStatus.incomplete',
-        no_3mf: 'printStatus.no3mf'
+        no_3mf: 'printStatus.no3mf',
+        end_unseen: 'printStatus.endUnseen'
       };
       var FINISHED_STATUS = 'finished';
       var GOOD_STATUS = { finished: true };
@@ -800,7 +802,8 @@
         failed: 'failed',
         cancelled: 'failed',
         incomplete: 'warning',
-        no_3mf: 'warning'
+        no_3mf: 'warning',
+        end_unseen: 'warning'
       };
 
       var dictionary = {};

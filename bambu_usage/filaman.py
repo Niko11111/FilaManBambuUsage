@@ -47,6 +47,9 @@ BAMBU_DRIVER_KEY = "bambulab"
 # log and separable from the scale and from manual entry.
 CONSUMPTION_SOURCE = "bambu_usage"
 
+# This plugin's key in FilaMan's InstalledPlugin table, as in plugin.json.
+PLUGIN_KEY = "bambu_usage"
+
 # Keys the Bambu Lab driver stores in Printer.driver_config through its
 # config_schema. A printer missing one of them cannot be watched.
 CONFIG_HOST = "host"
@@ -127,6 +130,23 @@ async def session_scope() -> AsyncIterator[AsyncSession]:
     (async_session_maker,) = _import_names("app.core.database", "async_session_maker")
     async with async_session_maker() as session:
         yield session
+
+
+async def is_plugin_active(db: AsyncSession) -> bool:
+    """Whether FilaMan's switch for this plugin is on.
+
+    FilaMan stops serving a switched off plugin's routes, but it cannot stop the
+    background task this plugin started itself, so the tracker has to ask.
+
+    A plugin without a row counts as active. Only an explicit "off" stops the
+    tracking: a hand copied development install has no row, and silently never
+    tracking there would be the harder fault to find.
+    """
+    (select,) = _import_names("sqlalchemy", "select")
+    (InstalledPlugin,) = _import_names("app.models.plugin", "InstalledPlugin")
+
+    statement = select(InstalledPlugin.is_active).where(InstalledPlugin.plugin_key == PLUGIN_KEY)
+    return await db.scalar(statement) is not False
 
 
 async def list_bambu_printers(db: AsyncSession) -> list[BambuPrinter]:

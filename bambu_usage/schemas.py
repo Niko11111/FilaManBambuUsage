@@ -33,6 +33,16 @@ def _as_utc(value: datetime | None) -> datetime | None:
 # so the next field somebody adds inherits the decision rather than the bug.
 UtcDatetime = Annotated[datetime, AfterValidator(_as_utc)]
 
+# Bounds on what a request may carry. Without them pydantic lets Infinity, NaN
+# and integers beyond any database column through, and the damage shows up
+# later and elsewhere: a spool clamped to zero, a history that no longer
+# serialises, an insert that overflows.
+MAX_DATABASE_ID = 2**31 - 1
+# Well above any spool there is, so a typo is refused rather than booked.
+MAX_CORRECTION_GRAMS = 10_000
+# A century. Further than that, the cutoff date overflows.
+MAX_RETENTION_DAYS = 36_500
+
 
 class PluginSettings(BaseModel):
     """Behaviour for one printer, or the global defaults.
@@ -40,14 +50,14 @@ class PluginSettings(BaseModel):
     ``printer_id`` 0 addresses the global row. See docs/04_Data_Model.md.
     """
 
-    printer_id: int = Field(default=0, ge=0)
+    printer_id: int = Field(default=0, ge=0, le=MAX_DATABASE_ID)
     tracking_enabled: bool = True
     auto_spend: bool = True
     # On by default, because what a stopped print used is booked in proportion
     # to how far it got, not as the full estimate. Booking nothing would leave
     # the spool wrong after every abort.
     spend_on_cancel: bool = True
-    history_retention_days: int = Field(default=365, ge=0)
+    history_retention_days: int = Field(default=365, ge=0, le=MAX_RETENTION_DAYS)
 
 
 class PrinterStatus(BaseModel):
@@ -143,14 +153,14 @@ class AssignSpoolRequest(BaseModel):
     automatic resolution came up empty.
     """
 
-    spool_id: int | None = None
+    spool_id: int | None = Field(default=None, ge=1, le=MAX_DATABASE_ID)
     spend_now: bool = False
 
 
 class CorrectUsageRequest(BaseModel):
     """Override the booked amount for one filament row."""
 
-    grams: float = Field(ge=0)
+    grams: float = Field(ge=0, le=MAX_CORRECTION_GRAMS, allow_inf_nan=False)
 
 
 class HealthResponse(BaseModel):

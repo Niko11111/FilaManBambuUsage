@@ -23,11 +23,13 @@ import logging
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import delete, insert, or_, select, update
+from sqlalchemy import case, delete, insert, or_, select, update
 
 from .models import (
     OPEN_STATUSES,
     SPOOL_FROM_HAND,
+    STATUS_END_UNSEEN,
+    STATUS_RUNNING,
     STOPPED_STATUSES,
     filament_table,
     printer_status_table,
@@ -182,17 +184,54 @@ async def find_open_print(db: AsyncSession, printer_id: int) -> Any | None:
     middle of it. "Open" covers more than running: a print recorded without its
     3MF, or one the plugin joined in the middle, is just as unfinished and would
     otherwise stay open for good.
+
+    Those two keep their status when they end, so the status alone cannot say
+    whether they are over. ``finished_at`` can.
     """
     result = await db.execute(
         select(prints_table)
         .where(
             prints_table.c.printer_id == printer_id,
             prints_table.c.status.in_(OPEN_STATUSES),
+            prints_table.c.finished_at.is_(None),
         )
         .order_by(prints_table.c.started_at.desc())
         .limit(1)
     )
     return result.first()
+
+
+async def close_superseded_prints(
+    db: AsyncSession,
+    printer_id: int,
+    newer_print_id: int,
+    at: datetime,
+) -> int:
+    """Close every other open print of a printer that has started a new one.
+
+    A printer runs one job at a time, so whatever is still open beside the new
+    print has ended without this plugin seeing it: switched off or restarting
+    at the time, or the end overtaken by a job change. Left open, such a print
+    would stay "running" for good and could not even be booked by hand.
+
+    A running one becomes ``end_unseen``; one that was never bookable keeps
+    its status and just gets its end. Returns how many were closed.
+    """
+    status = prints_table.c.status
+    result = await db.execute(
+        update(prints_table)
+        .where(
+            prints_table.c.printer_id == printer_id,
+            prints_table.c.id != newer_print_id,
+            status.in_(OPEN_STATUSES),
+            prints_table.c.finished_at.is_(None),
+        )
+        .values(
+            status=case((status == STATUS_RUNNING, STATUS_END_UNSEEN), else_=status),
+            finished_at=at,
+        )
+    )
+    return result.rowcount or 0
 
 
 # How the history can be sorted. An allow list rather than a column name off
@@ -438,22 +477,45 @@ async def narrow_filament_row(
     )
 
 
+def _row_unchanged(filament_row_id: int, booked_grams: float | None) -> Any:
+    """The row as the caller read it: unbooked, or booked at exactly that amount.
+
+    Every write that moves grams on a spool is conditional on this. Two callers
+    that read the same row, two browser tabs or the tracker and a person, would
+    otherwise both book it. With the condition the database lets exactly one of
+    them through, on SQLite as on PostgreSQL, and the other sees no row changed.
+    """
+    column = filament_table.c
+    if booked_grams is None:
+        state = column.spent_at.is_(None)
+    else:
+        state = column.spent_grams == booked_grams
+    return (column.id == filament_row_id) & state
+
+
 async def mark_filament_spent(
     db: AsyncSession,
     filament_row_id: int,
     grams: float,
     spent_at: datetime,
-) -> None:
-    """Record what was actually booked for one row.
+    *,
+    booked_grams: float | None,
+) -> bool:
+    """Record what was actually booked for one row, if nobody else did first.
+
+    *booked_grams* is what the caller read: None for a row not booked yet,
+    otherwise the amount it is booked at. Returns whether the row was still in
+    that state; only then may the caller move grams on the spool.
 
     ``estimated_grams`` is never touched, so the slicer's number stays
     comparable against the scale. See docs/04_Data_Model.md section 4.
     """
-    await db.execute(
+    result = await db.execute(
         update(filament_table)
-        .where(filament_table.c.id == filament_row_id)
+        .where(_row_unchanged(filament_row_id, booked_grams))
         .values(spent_grams=grams, spent_at=spent_at)
     )
+    return result.rowcount == 1
 
 
 async def override_filament_amount(
@@ -461,17 +523,21 @@ async def override_filament_amount(
     filament_row_id: int,
     grams: float,
     spent_at: datetime,
-) -> None:
+    *,
+    booked_grams: float | None,
+) -> bool:
     """Set the booked amount of one row by hand, and settle it.
 
     A corrected row counts as booked from then on, whether or not it ever was,
-    so the same correction cannot be applied twice.
+    so the same correction cannot be applied twice. Conditional in the same way
+    as mark_filament_spent, and returns whether it applied.
     """
-    await db.execute(
+    result = await db.execute(
         update(filament_table)
-        .where(filament_table.c.id == filament_row_id)
+        .where(_row_unchanged(filament_row_id, booked_grams))
         .values(spent_grams=grams, spent_at=spent_at, manual_override=True)
     )
+    return result.rowcount == 1
 
 
 async def delete_print(db: AsyncSession, print_id: int) -> bool:

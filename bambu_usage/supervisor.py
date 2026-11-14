@@ -30,10 +30,13 @@ import fcntl
 import logging
 import tempfile
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # imported for annotations only
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from .tracker import PrinterListener
 
 logger = logging.getLogger(__name__)
@@ -49,6 +52,10 @@ PRINTER_REFRESH_INTERVAL_SECONDS = 60
 
 # How often a worker without the lock checks whether the owner has gone.
 TAKEOVER_INTERVAL_SECONDS = 60
+
+# How often prints older than the retention setting are deleted. The setting
+# counts in days, so once a day is as precise as it can be.
+HISTORY_PURGE_INTERVAL_SECONDS = 24 * 60 * 60
 
 # Only one worker of the four may hold the listeners. The file is deliberately
 # never deleted, so the others can keep flock()ing it while they wait.
@@ -72,6 +79,7 @@ class _Supervisor:
         self.engine: Any = None
         self.sessions: Any = None
         self.lock_handle: Any = None
+        self.last_purge_at: datetime | None = None
 
     @property
     def owns_listeners(self) -> bool:
@@ -130,7 +138,7 @@ async def _supervise() -> None:
 
     logger.info("bambu_usage: this worker owns the listeners")
 
-    await start_tracking()
+    await _start_until_it_works()
     while True:
         await asyncio.sleep(PRINTER_REFRESH_INTERVAL_SECONDS)
         try:
@@ -139,6 +147,10 @@ async def _supervise() -> None:
             # The reconcile loop must survive a database hiccup; the next round
             # tries again in a minute.
             logger.exception("bambu_usage: refreshing the printer list failed")
+        try:
+            await purge_history_if_due()
+        except Exception:
+            logger.exception("bambu_usage: deleting expired history failed")
 
 
 def _acquire_lock() -> bool:
@@ -161,6 +173,49 @@ def _acquire_lock() -> bool:
 
     _supervisor.lock_handle = handle
     return True
+
+
+async def purge_history_if_due(now: datetime | None = None) -> int:
+    """Delete prints older than the retention setting, at most once a day.
+
+    Runs in the worker that owns the listeners, so exactly one of the four does
+    it. What was booked stays booked: this tidies the history, not the spools.
+    Returns how many prints went.
+    """
+    from . import models, settings
+
+    moment = now or datetime.now(timezone.utc)
+    last = _supervisor.last_purge_at
+    if last is not None and (moment - last).total_seconds() < HISTORY_PURGE_INTERVAL_SECONDS:
+        return 0
+
+    async with _supervisor.sessions() as db:
+        config = await settings.load_settings(db)
+        removed = await models.purge_expired_history(db, config.history_retention_days, moment)
+        await db.commit()
+
+    _supervisor.last_purge_at = moment
+    if removed:
+        logger.info("bambu_usage: deleted %d print(s) past the retention period", removed)
+    return removed
+
+
+async def _start_until_it_works() -> None:
+    """Start tracking, and keep trying if FilaMan is not ready yet.
+
+    On a slow machine FilaMan can still be migrating when the startup delay is
+    over. Giving up there would leave this worker holding the lock with nothing
+    running behind it, and no other worker would ever take over, so it tries
+    again every refresh interval instead.
+    """
+    while True:
+        try:
+            await start_tracking()
+            return
+        except Exception:
+            logger.exception("bambu_usage: starting the tracker failed, trying again")
+            await stop_tracking()
+            await asyncio.sleep(PRINTER_REFRESH_INTERVAL_SECONDS)
 
 
 async def start_tracking() -> None:
@@ -195,19 +250,27 @@ async def stop_tracking() -> None:
 async def refresh_printers() -> None:
     """Reconcile the running listeners with FilaMan's printer list.
 
-    Three things can have changed since the last round: a printer appeared or
-    vanished, its credentials were edited, or tracking was switched off for it.
-    All three are handled by comparing rather than by remembering.
+    Four things can have changed since the last round: a printer appeared or
+    vanished, its credentials were edited, tracking was switched off for it, or
+    the whole plugin was switched off in FilaMan. All four are handled by
+    comparing rather than by remembering.
+
+    A switched off plugin is treated like tracking switched off for every
+    printer: the listeners close, a running print stays open, and a listener
+    started after the plugin is switched back on picks it up again. That takes
+    up to one refresh interval, which is the price of asking FilaMan once a
+    minute rather than on every printer report. docs/01_Design.md, 5.
     """
     from . import filaman, settings, store
 
     async with _supervisor.sessions() as db:
+        plugin_active = await _plugin_switched_on(db)
         printers = await filaman.list_bambu_printers(db)
         wanted = {printer.printer_id: printer for printer in printers}
         enabled = {}
         for printer_id in wanted:
             config = await settings.load_settings(db, printer_id)
-            enabled[printer_id] = config.tracking_enabled
+            enabled[printer_id] = plugin_active and config.tracking_enabled
 
         await store.forget_printers(db, list(wanted))
         await db.commit()
@@ -228,6 +291,22 @@ async def refresh_printers() -> None:
     for listener in _supervisor.listeners.values():
         with contextlib.suppress(Exception):
             await listener.publish_status()
+
+
+async def _plugin_switched_on(db: AsyncSession) -> bool:
+    """FilaMan's switch for this plugin, read so that a moved model costs nothing.
+
+    Should a FilaMan update move InstalledPlugin, the switch can no longer be
+    read, and the plugin then keeps tracking as it did before it read the
+    switch at all, rather than stopping every printer over it.
+    """
+    from . import filaman
+
+    try:
+        return await filaman.is_plugin_active(db)
+    except filaman.FilaManUnavailableError:
+        logger.warning("bambu_usage: cannot read the plugin switch, tracking as if on")
+        return True
 
 
 async def _add_listener(printer: Any) -> None:
@@ -268,8 +347,6 @@ async def _drop_listener(printer_id: int) -> None:
 
 async def _publish_idle(printer: Any) -> None:
     """Show a printer with tracking switched off, rather than not at all."""
-    from datetime import datetime, timezone
-
     from . import store
 
     async with _supervisor.sessions() as db:
