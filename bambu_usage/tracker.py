@@ -154,13 +154,31 @@ class PrinterListener:
     async def stop(self) -> None:
         """Disconnect and release the connection."""
         if self.client is not None:
-            with contextlib.suppress(OSError, RuntimeError):
-                self.client.stop()
+            self._disconnect(self.client)
 
         self.client = None
         self.connected = False
         logger.info("printer %s: listener stopped", self.printer_id)
         await self.publish_status()
+
+    def _disconnect(self, client: Any) -> None:
+        """Close the connection to the printer, then end paho's loop.
+
+        bambulabs_api's own stop() only ends the loop and leaves the socket open
+        (2.6.6), so every stopped listener would keep a connection at the
+        printer, which accepts only a few at a time. Its paho client is reached
+        through a private attribute for that reason, with the dependency pinned
+        below 3.0.0. Should the name move, the warning says so.
+        """
+        paho_client = getattr(client, "_client", None)
+        if paho_client is None:
+            logger.warning("printer %s: cannot reach the MQTT connection to close it", self.printer_id)
+        else:
+            with contextlib.suppress(OSError, RuntimeError):
+                paho_client.disconnect()
+
+        with contextlib.suppress(OSError, RuntimeError):
+            client.stop()
 
     def _on_message(self, mqtt_client: Any, client: Any, userdata: Any, msg: Any) -> None:
         """Hand one report over to our loop. Runs in paho's thread.
@@ -257,7 +275,7 @@ class PrinterListener:
         # Fetched outside a session: this reaches over the network and can take
         # the better part of a minute, and holding a database connection open
         # for that would be felt by every other worker on SQLite.
-        metadata, status = await self._fetch_3mf(job)
+        metadata, status = await self._metadata_for(job)
 
         if joined_mid_print:
             # The plugin attached in the middle of this print. It is recorded so
@@ -310,6 +328,29 @@ class PrinterListener:
             rules.slot_index(tag.ams_id, tag.tray_id): tag.uuid
             for tag in tray_tags(self.state)
         }
+
+    async def _metadata_for(self, job: PrintJob) -> tuple[Any, str | None]:
+        """The 3MF numbers for *job*, fetched only for a print not yet recorded."""
+        if await self._already_recorded(job):
+            from .threemf import PrintMetadata
+
+            return PrintMetadata(), None
+        return await self._fetch_3mf(job)
+
+    async def _already_recorded(self, job: PrintJob) -> bool:
+        """Whether *job* is an open print, recorded before this listener existed.
+
+        Taking such a print over needs nothing from its 3MF, the numbers were
+        stored when it started. Fetching it again would only fail where the file
+        is gone by now, as with a cloud print, and leave a false error behind.
+        """
+        from . import store
+
+        if not job.subtask_id:
+            return False
+        async with self.sessions() as db:
+            known = await store.find_print_by_subtask(db, self.printer_id, job.subtask_id)
+        return known is not None and known.finished_at is None
 
     async def _fetch_3mf(self, job: PrintJob) -> tuple[Any, str | None]:
         """Fetch and read the 3MF of *job*.

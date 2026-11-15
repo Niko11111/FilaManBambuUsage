@@ -4,7 +4,7 @@
   "name": "Bambu Usage Tracking",
   "plugin_type": "integration",
   "version": "1.0.0",
-  "description": "Tracks print jobs on Bambu Lab printers and deducts the consumed filament from the matching FilaMan spools. Reads the AMS slot assignment maintained by the Bambu Lab driver plugin, so nothing has to be configured twice. Provides a print history with plate previews and manual correction. Requires FilaMan 2.0.6 or newer, the first release that installs a plugin with its own sidebar icon. After a first installation FilaMan has to be restarted once, so the plugin's routes get mounted. Do not use it together with Bambuddy's usage tracking for the same printer: if Bambuddy also books its usage into FilaMan, through the Bambuddy plugin or the Spoolman API, every print is deducted twice.",
+  "description": "Deducts the filament of Bambu Lab prints from the matching FilaMan spools, using the AMS slots of the Bambu Lab driver, with a print history and plate previews. Requires FilaMan 2.0.6 or newer; restart FilaMan once after the first install. Do not combine with Bambuddy's usage tracking on the same printer, or every print is deducted twice.",
   "author": "Niko11111",
   "homepage": "https://github.com/Niko11111/FilaManBambuUsage",
   "license": "MIT",

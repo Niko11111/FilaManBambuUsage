@@ -131,6 +131,13 @@ listeners close and nothing is booked. A print that was running stays open.
 When the plugin is switched back on, the next listener sees it still running
 under the same `subtask_id`, takes it over, and books it at its end as though
 nothing had happened, which is right, because the filament was used either way.
+Taking it over fetches no 3MF: its numbers were stored at the start, and a
+cloud print's file is no longer on the printer.
+
+Closing a listener closes its connection. `bambulabs_api`'s own `stop()` only
+ends paho's loop and leaves the socket open, so the listener disconnects paho
+first. Otherwise every off and on would leave a dead connection at the printer,
+which accepts only a few at a time.
 
 Asking once a minute rather than on every printer report means switching off
 takes effect within one refresh interval, not instantly. A print ending in that

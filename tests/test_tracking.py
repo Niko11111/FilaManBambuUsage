@@ -48,11 +48,25 @@ SPOOL_BY_SLOT = {"0-0": 7, "0-1": 8}
 GRAMS_BY_SPOOL = [(7, 10.0), (8, 20.0)]
 
 
+class FakePaho:
+    """The paho client inside, recording what is done to the connection."""
+
+    def __init__(self):
+        self.calls = []
+
+    def disconnect(self):
+        self.calls.append("disconnect")
+
+    def loop_stop(self):
+        self.calls.append("loop_stop")
+
+
 class FakeMQTT:
     """Stands in for bambulabs_api.PrinterMQTTClient. Reports are fed by hand."""
 
     def __init__(self, host, access_code, serial):
         self.running = False
+        self._client = FakePaho()
 
     def connect(self):
         pass
@@ -61,6 +75,8 @@ class FakeMQTT:
         self.running = True
 
     def stop(self):
+        # What bambulabs_api 2.6.6 does: the loop ends, the socket stays open.
+        self._client.loop_stop()
         self.running = False
 
 
@@ -184,6 +200,28 @@ class TrackingTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(prints), 1)
         self.assertEqual(prints[0].status, models.STATUS_FINISHED)
         self.assertEqual(self.consumptions, GRAMS_BY_SPOOL)
+
+    async def test_a_closed_listener_disconnects_before_its_loop_ends(self):
+        # Seen on the X1C: switched off, the old connection stayed open with
+        # 146 KB nobody read. Every off and on would leave one more behind.
+        await supervisor.refresh_printers()
+        client = self.owner.listeners[PRINTER_ID].client
+
+        await self.switch_plugin(False)
+
+        self.assertEqual(client._client.calls, ["disconnect", "loop_stop"])
+
+    async def test_taking_a_print_over_fetches_no_3mf(self):
+        # A cloud print's file is gone from the printer by then, and the failed
+        # fetch showed as an error on a print that was perfectly fine.
+        await self.start_print()
+        await self.switch_plugin(False)
+        await self.switch_plugin(True)
+
+        await self.report("RUNNING", mc_percent=70)
+
+        self.assertEqual(PrinterListener._fetch_3mf.call_count, 1)
+        self.assertIsNone(self.owner.listeners[PRINTER_ID].last_error)
 
     async def test_a_print_that_ended_while_switched_off_is_booked_on_return(self):
         await self.start_print()
