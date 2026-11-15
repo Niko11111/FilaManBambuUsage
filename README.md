@@ -145,6 +145,12 @@ If FilaMan holds no slot assignment for a tray, the print still lands in the
 history: its rows are marked as open and a spool can be picked by hand, after
 which the booking runs as usual.
 
+**Do not use it together with Bambuddy's usage tracking for the same printer.**
+If Bambuddy also books its usage into FilaMan, through the Bambuddy plugin or
+the Spoolman API, every print is deducted twice. A printer that FilaMan knows
+only through the Bambuddy driver is not tracked by this plugin at all, since it
+only follows printers with `driver_key == "bambulab"`.
+
 ## Building
 
 ```bash
