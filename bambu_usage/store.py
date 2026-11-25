@@ -81,6 +81,7 @@ async def create_print(
     estimated_seconds: int | None = None,
     object_count: int | None = None,
     nozzle_diameter: float | None = None,
+    start_report: dict[str, Any] | None = None,
 ) -> int:
     """Insert one print and return its id.
 
@@ -104,9 +105,26 @@ async def create_print(
             estimated_seconds=estimated_seconds,
             object_count=object_count,
             nozzle_diameter=nozzle_diameter,
+            start_report=json.dumps(start_report) if start_report else None,
         )
     )
     return int(result.inserted_primary_key[0])
+
+
+def decode_start_report(value: str | None) -> dict[str, Any] | None:
+    """Read the stored start report back. None where there is none or it is broken.
+
+    Only the diagnostics text reads it, so a broken one costs a line in that
+    text and nothing else.
+    """
+    if not value:
+        return None
+    try:
+        report = json.loads(value)
+    except ValueError as exc:
+        logger.warning("stored start report is not readable: %s", exc)
+        return None
+    return report if isinstance(report, dict) else None
 
 
 def decode_layer_shares(value: str | None) -> dict[int, list[float]]:

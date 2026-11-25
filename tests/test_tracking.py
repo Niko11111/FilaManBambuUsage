@@ -30,7 +30,7 @@ if HAS_TEST_DEPENDENCIES:
     from sqlalchemy import Boolean, Column, MetaData, String, Table, select
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    from bambu_usage import models, settings
+    from bambu_usage import models, settings, views
     from bambu_usage.schemas import PluginSettings
 
     # The one FilaMan table the plugin reads here, reduced to the two columns
@@ -163,6 +163,39 @@ class TrackingTest(unittest.IsolatedAsyncioTestCase):
     async def prints(self):
         async with self.sessions() as db:
             return (await db.execute(select(models.prints_table))).all()
+
+    async def test_a_start_keeps_the_report_the_diagnostics_text_shows(self):
+        await supervisor.refresh_printers()
+        await self.report("IDLE")
+        await self.report(
+            "RUNNING",
+            url="https://cdn.example.invalid/Cube.3mf?Signature=secret",
+            ams_mapping2=[{"ams_id": 0, "slot_id": 0}, {"ams_id": 0, "slot_id": 1}],
+        )
+        print_id = (await self.prints())[0].id
+
+        with mock.patch.object(filaman, "installed_versions", return_value=("2.7.0", "2.13.0")):
+            async with self.sessions() as db:
+                text = await views.print_diagnostics(db, print_id)
+                overview = await views.overview_diagnostics(db)
+                missing = await views.print_diagnostics(db, print_id + 1)
+
+        self.assertIn("3MF from     https://cdn.example.invalid/Cube.3mf", text)
+        self.assertIn('ams_mapping2 [{"ams_id":0,"slot_id":0},{"ams_id":0,"slot_id":1}]', text)
+        self.assertIn("Filament 1   PLA", text)
+        self.assertNotIn("secret", text)
+        self.assertIn("Printer X1C (id 1)", overview)
+        self.assertIn(f"#{print_id} ", overview)
+        self.assertIsNone(missing)
+
+    async def test_a_report_the_snapshot_cannot_read_still_records_the_print(self):
+        with mock.patch("bambu_usage.diagnostics.snapshot_of", side_effect=ValueError("odd")):
+            with self.assertLogs("bambu_usage.tracker", level="ERROR"):
+                await self.start_print()
+
+        prints = await self.prints()
+        self.assertEqual(len(prints), 1)
+        self.assertIsNone(prints[0].start_report)
 
     async def test_a_switched_off_plugin_starts_no_listener(self):
         await self.switch_plugin(False)

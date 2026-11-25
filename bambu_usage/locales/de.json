@@ -128,5 +128,21 @@
     "bookingFailed": "Die Buchung war nicht möglich",
     "generic": "Das hat nicht geklappt",
     "spoolsUnavailable": "Die Spulenliste konnte nicht aus FilaMan geladen werden"
+  },
+  "diagnostics": {
+    "button": "Diagnose zu diesem Druck",
+    "heading": "Hilfe und Diagnose",
+    "intro": "Wird ein Druck auf die falsche Spule gebucht oder fehlt die 3MF, diesen Text mit der Frage mitschicken. Er zeigt, was die Drucker gemeldet haben und wie das Plugin es gelesen hat.",
+    "printIntro": "Was der Drucker beim Start dieses Drucks gemeldet hat und wie das Plugin daraus Slots und Spulen gemacht hat.",
+    "privacy": "Enthält keinen Access-Code, keine Seriennummer und keine IP-Adresse. Die Dateinamen der Drucke stehen drin.",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "copyFailed": "Kopieren ging nicht. Der Text ist markiert und lässt sich mit Strg+C oder Cmd+C kopieren.",
+    "download": "Als .txt speichern",
+    "report": "Problem auf GitHub melden",
+    "show": "Anzeigen, was drinsteht",
+    "fits": "{count} Zeichen, passt in eine Discord-Nachricht",
+    "tooLong": "{count} Zeichen, zu lang für eine Discord-Nachricht. Besser die Datei herunterladen und anhängen.",
+    "loadFailed": "Der Diagnose-Text ließ sich nicht laden."
   }
 }

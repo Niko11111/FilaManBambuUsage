@@ -187,6 +187,7 @@ One print job.
 | `thumbnail_mime` | str, nullable | in practice `image/png` |
 | `error` | str, nullable | last error concerning this print |
 | `created_at` | datetime | |
+| `start_report` | text, nullable | JSON, what the printer reported when the print started, cut down by `diagnostics.snapshot_of`: `url` without query, `gcode_file`, `print_type`, `ams_mapping`, `ams_mapping2`, `tray_now`, the AMS units and external inputs. No access code, serial number or address. `NULL` for prints recorded before 1.0.2. Read only by the diagnostics text, see `01_Design.md` section 8.4 |
 
 Uniqueness on `(printer_id, subtask_id)` where a `subtask_id` exists, otherwise
 on `(printer_id, file_name, started_at)`. A duplicate MQTT message therefore

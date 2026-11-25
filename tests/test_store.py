@@ -205,6 +205,22 @@ class StoreTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(record.status, models.STATUS_RUNNING)
             self.assertFalse(record.spent)
 
+    async def test_the_start_report_comes_back_as_it_went_in(self):
+        report = {"url": "file:///userdata/model/history/Cube.gcode.3mf", "ams_mapping": [0]}
+        async with self.sessions() as db:
+            print_id = await self.make_print(db, start_report=report)
+            without = await self.make_print(db, subtask_id="job-2")
+            await db.commit()
+
+            stored = (await store.get_print(db, print_id)).start_report
+            self.assertEqual(store.decode_start_report(stored), report)
+            self.assertIsNone((await store.get_print(db, without)).start_report)
+
+    def test_a_broken_start_report_reads_as_none(self):
+        self.assertIsNone(store.decode_start_report("{not json"))
+        self.assertIsNone(store.decode_start_report("[1, 2]"))
+        self.assertIsNone(store.decode_start_report(None))
+
     async def test_a_print_is_found_by_its_subtask(self):
         async with self.sessions() as db:
             print_id = await self.make_print(db, subtask_id="abc")

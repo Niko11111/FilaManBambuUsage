@@ -26,9 +26,11 @@ store, bambulabs_api or fastapi. Enforced by tools/check_architecture.py.
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # imported for annotations only
@@ -49,6 +51,10 @@ CONSUMPTION_SOURCE = "bambu_usage"
 
 # This plugin's key in FilaMan's InstalledPlugin table, as in plugin.json.
 PLUGIN_KEY = "bambu_usage"
+
+# FilaMan's package, and the file beside it that holds FilaMan's version.
+FILAMAN_PACKAGE = "app"
+FILAMAN_VERSION_FILE = "version.txt"
 
 # Keys the Bambu Lab driver stores in Printer.driver_config through its
 # config_schema. A printer missing one of them cannot be watched.
@@ -355,6 +361,50 @@ def background_sessions(engine: AsyncEngine) -> Any:
     """Return a session maker bound to *engine*."""
     (async_sessionmaker,) = _import_names("sqlalchemy.ext.asyncio", "async_sessionmaker")
     return async_sessionmaker(engine, expire_on_commit=False)
+
+
+async def installed_versions(db: AsyncSession) -> tuple[str | None, str | None]:
+    """FilaMan's own version and the Bambu Lab driver's, for the diagnostics text.
+
+    Either is None where it cannot be read. The text is what a user sends when
+    something is already wrong, so a missing version must cost one word in it
+    and never the whole text.
+    """
+    return _filaman_version(), await _driver_version(db)
+
+
+def _filaman_version() -> str | None:
+    """Read version.txt beside FilaMan's app package, where FilaMan reads it too.
+
+    In the container that is /app/version.txt next to /app/app, see
+    ``_read_installed_version`` in FilaMan's app/api/v1/system.py.
+    """
+    try:
+        spec = importlib.util.find_spec(FILAMAN_PACKAGE)
+    except (ImportError, ValueError):
+        return None
+    if spec is None or not spec.origin:
+        return None
+    version_file = Path(spec.origin).resolve().parents[1] / FILAMAN_VERSION_FILE
+    try:
+        return version_file.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+async def _driver_version(db: AsyncSession) -> str | None:
+    """The version of the Bambu Lab driver plugin, as FilaMan recorded it."""
+    try:
+        (select,) = _import_names("sqlalchemy", "select")
+        (InstalledPlugin,) = _import_names("app.models.plugin", "InstalledPlugin")
+    except FilaManUnavailableError:
+        return None
+    # The driver's plugin key and the driver_key of its printers are one name.
+    statement = select(InstalledPlugin.version).where(
+        InstalledPlugin.plugin_key == BAMBU_DRIVER_KEY
+    )
+    found = await db.scalar(statement)
+    return str(found) if found else None
 
 
 async def load_currency(db: AsyncSession) -> str | None:

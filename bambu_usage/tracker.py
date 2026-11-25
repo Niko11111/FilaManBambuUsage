@@ -23,7 +23,7 @@ of this module, the ones that decide what a report means, stay testable without
 a database, without FilaMan and without a printer.
 
 May import: report, service, settings, store, models, threemf, filaman,
-bambulabs_api. Must not import router, supervisor or app. Enforced by
+diagnostics, bambulabs_api. Must not import router, supervisor or app. Enforced by
 tools/check_architecture.py.
 
 """
@@ -295,6 +295,7 @@ class PrinterListener:
                 started_at=at,
                 status=status,
                 tray_tags=self._tray_tags(),
+                start_report=self._start_report(),
             )
 
         self.current_print_id = print_id
@@ -308,6 +309,22 @@ class PrinterListener:
             len(metadata.filaments),
         )
         await self.publish_status()
+
+    def _start_report(self) -> dict[str, Any] | None:
+        """What of the starting report is kept for the diagnostics text.
+
+        Broad on purpose: the report is only ever read back for a question, so
+        a shape the snapshot does not expect must cost that text a line and
+        never the print, which is recorded in the same step and is what gets
+        booked.
+        """
+        from . import diagnostics
+
+        try:
+            return diagnostics.snapshot_of(self.state)
+        except Exception:
+            logger.exception("printer %s: keeping the start report failed", self.printer_id)
+            return None
 
     def _active_slot_index(self) -> str | None:
         """Which slot the printer is drawing from, named the way FilaMan does.
@@ -362,22 +379,20 @@ class PrinterListener:
         from . import threemf
         from .models import STATUS_NO_3MF
 
+        # print.url wins where both are reported, as it always has. Whether it is
+        # a cloud download or a file on the printer is threemf's call.
+        location = job.url or job.remote_path
+        if not location:
+            logger.warning(
+                "printer %s: print %s names no 3MF at all", self.printer_id, job.file_name
+            )
+            return threemf.PrintMetadata(), STATUS_NO_3MF
+
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / "job.3mf"
 
             try:
-                if job.url:
-                    await threemf.download_from_url(job.url, destination)
-                elif job.remote_path:
-                    await threemf.download_from_printer(
-                        self.host, self.access_code, job.remote_path, destination
-                    )
-                else:
-                    logger.warning(
-                        "printer %s: print %s names no 3MF at all", self.printer_id, job.file_name
-                    )
-                    return threemf.PrintMetadata(), STATUS_NO_3MF
-
+                await threemf.download(self.host, self.access_code, location, destination)
                 return threemf.parse(destination), None
 
             except threemf.ThreeMFError as exc:

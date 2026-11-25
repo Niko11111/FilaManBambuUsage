@@ -360,6 +360,39 @@ async def thumbnail(print_id: int, db: DBSession) -> Response:
     )
 
 
+# The diagnostics text is plain text, because it is copied into a chat or saved
+# as a .txt file as it is. UTF-8 because a file name can be anything.
+DIAGNOSTICS_MEDIA_TYPE = "text/plain; charset=utf-8"
+
+
+@router.get(
+    "/diagnostics",
+    dependencies=[Depends(require_auth), Depends(ensure_ready)],
+)
+async def diagnostics_overview(db: DBSession) -> Response:
+    """The help card's text: every printer and the latest prints."""
+    try:
+        text = await views.overview_diagnostics(db)
+    except SQLAlchemyError as exc:
+        raise _database_unavailable(exc) from exc
+    return Response(content=text, media_type=DIAGNOSTICS_MEDIA_TYPE)
+
+
+@router.get(
+    "/diagnostics/print/{print_id}",
+    dependencies=[Depends(require_auth), Depends(ensure_ready)],
+)
+async def diagnostics_print(print_id: int, db: DBSession) -> Response:
+    """The text about one print, for the window in its history row."""
+    try:
+        text = await views.print_diagnostics(db, print_id)
+    except SQLAlchemyError as exc:
+        raise _database_unavailable(exc) from exc
+    if text is None:
+        raise _not_found()
+    return Response(content=text, media_type=DIAGNOSTICS_MEDIA_TYPE)
+
+
 @admin_router.post(
     "/filament/{filament_row_id}/assign",
     status_code=status.HTTP_204_NO_CONTENT,

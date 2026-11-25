@@ -10,12 +10,16 @@ holds FilaMan's printer and spool lists for its dropdowns, so resolving the name
 there costs nothing, while doing it here would add two more couplings into
 FilaMan for display text alone.
 
-May import: store, schemas, filaman, rules. Must not import tracker, supervisor,
+The diagnostics text is read side as well: it gathers the rows here and leaves
+the wording to diagnostics.py.
+
+May import: store, schemas, filaman, rules, diagnostics. Must not import tracker, supervisor,
 router, app, bambulabs_api or fastapi. Enforced by tools/check_architecture.py.
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from . import rules
@@ -23,7 +27,13 @@ from . import rules
 if TYPE_CHECKING:  # imported for annotations only
     from sqlalchemy.ext.asyncio import AsyncSession
 
+    from .diagnostics import PrintFacts, Versions
     from .schemas import PrinterStatus, PrintRecord
+
+# How many of the latest prints the help card's text describes. Three cover a
+# question about "the last print" and the one before it, and stay short enough
+# for one Discord message.
+OVERVIEW_PRINT_COUNT = 3
 
 
 async def get_history(
@@ -197,3 +207,81 @@ async def get_thumbnail(db: AsyncSession, print_id: int) -> tuple[bytes, str] | 
     from . import store
 
     return await store.read_thumbnail(db, print_id)
+
+
+async def print_diagnostics(db: AsyncSession, print_id: int) -> str | None:
+    """The diagnostics text about one print. None when there is no such print."""
+    from . import diagnostics, store
+
+    row = await store.get_print(db, print_id)
+    if row is None:
+        return None
+    facts = await _print_facts(db, [row])
+    versions = await _versions(db)
+    return diagnostics.format_print(versions, facts[0], datetime.now(timezone.utc))
+
+
+async def overview_diagnostics(db: AsyncSession) -> str:
+    """The diagnostics text about every printer and the latest prints."""
+    from . import diagnostics, store
+
+    printers = [
+        diagnostics.PrinterFacts(
+            printer_id=int(row.printer_id),
+            name=row.printer_name,
+            connected=bool(row.connected),
+            tracking_enabled=bool(row.tracking_enabled),
+            last_error=row.last_error,
+        )
+        for row in await store.list_printer_status(db)
+    ]
+    rows = await store.list_prints(db, limit=OVERVIEW_PRINT_COUNT)
+    recent = await _print_facts(db, rows)
+    versions = await _versions(db)
+    return diagnostics.format_overview(versions, printers, recent, datetime.now(timezone.utc))
+
+
+async def _print_facts(db: AsyncSession, rows: list[Any]) -> list[PrintFacts]:
+    """The prints in *rows* with their filaments, ready for the text."""
+    from . import diagnostics, store
+
+    names = {
+        int(status.printer_id): status.printer_name
+        for status in await store.list_printer_status(db)
+    }
+    filaments: dict[int, list[diagnostics.FilamentFacts]] = {}
+    for usage in await store.list_filaments_for(db, [int(row.id) for row in rows]):
+        filaments.setdefault(int(usage.print_id), []).append(
+            diagnostics.FilamentFacts(
+                filament_id=int(usage.filament_id),
+                material=usage.material,
+                color_hex=usage.color_hex,
+                estimated_grams=usage.estimated_grams,
+                slot_index=usage.slot_index,
+                spool_id=usage.spool_id,
+                spool_source=usage.spool_source,
+            )
+        )
+    return [
+        diagnostics.PrintFacts(
+            print_id=int(row.id),
+            file_name=row.file_name,
+            printer_id=int(row.printer_id),
+            printer_name=names.get(int(row.printer_id)),
+            status=row.status,
+            spent=bool(row.spent),
+            started_at=row.started_at,
+            print_type=row.print_type,
+            error=row.error,
+            snapshot=store.decode_start_report(row.start_report),
+            filaments=filaments.get(int(row.id), []),
+        )
+        for row in rows
+    ]
+
+
+async def _versions(db: AsyncSession) -> Versions:
+    from . import __version__, diagnostics, filaman
+
+    filaman_version, driver_version = await filaman.installed_versions(db)
+    return diagnostics.Versions(plugin=__version__, filaman=filaman_version, driver=driver_version)

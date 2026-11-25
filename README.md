@@ -43,7 +43,7 @@ is already set up in FilaMan.
 
 ## Status
 
-**Version 1.0.0. It works, and it has booked a real print.**
+**Version 1.0.2. It works, and it has booked a real print.**
 
 ### Proven on hardware
 

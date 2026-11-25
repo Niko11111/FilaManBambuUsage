@@ -299,7 +299,8 @@ exception: FastAPI resolves dependencies while the route decorators run, so
 |---|---|
 | `app.core.database.async_session_maker`, `engine` | database access |
 | `app.core.event_bus.event_bus` | refreshing the page |
-| `app.models.plugin.InstalledPlugin` | reading this plugin's own `is_active` switch |
+| `app.models.plugin.InstalledPlugin` | reading this plugin's own `is_active` switch, and the Bambu Lab driver's `version` for the diagnostics text |
+| `version.txt` beside the `app` package | FilaMan's own version for the diagnostics text, read the way FilaMan's `_read_installed_version` reads it |
 | `app.models.printer.Printer` | finding printers with `driver_key == "bambulab"`, reading `driver_config` |
 | `app.models.printer.PrinterSlot` | `slot_no`, `custom_fields["slot_index"]` |
 | `app.models.printer.PrinterSlotAssignment` | `spool_id` per slot |

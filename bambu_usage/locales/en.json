@@ -128,5 +128,21 @@
     "bookingFailed": "The booking could not be carried out",
     "generic": "That did not work",
     "spoolsUnavailable": "The spool list could not be loaded from FilaMan"
+  },
+  "diagnostics": {
+    "button": "Diagnostics for this print",
+    "heading": "Help and diagnostics",
+    "intro": "If a print is booked to the wrong spool or stays without its 3MF, send this text along with the question. It shows what the printers reported and how the plugin read it.",
+    "printIntro": "What the printer reported when this print started, and how the plugin turned it into slots and spools.",
+    "privacy": "Contains no access code, serial number or IP address. The names of the print files are included.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyFailed": "Could not copy. The text is selected, copy it with Ctrl+C or Cmd+C.",
+    "download": "Download .txt",
+    "report": "Report a problem on GitHub",
+    "show": "Show what is included",
+    "fits": "{count} characters, fits in one Discord message",
+    "tooLong": "{count} characters, too long for one Discord message. Download the file and attach it instead.",
+    "loadFailed": "The diagnostics text could not be loaded."
   }
 }

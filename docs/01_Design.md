@@ -231,8 +231,10 @@ every empty chamber would hang on whichever spool happens to carry it.
      -> a print is starting
 
 2. Fetch the 3MF
-     cloud URL      -> direct download
-     otherwise      -> FTPS from the printer, bambulabs_api PrinterFTPClient
+     http(s) URL    -> direct download
+     otherwise      -> FTPS from the printer, bambulabs_api PrinterFTPClient,
+                       the file name looked for in / and then /cache/
+                       (file://, ftp:// and brtc:// URLs name a file there)
 
 3. Read the 3MF (a ZIP)
      Metadata/slice_info.config   -> plate id, and per filament used_g, used_m,
@@ -557,6 +559,52 @@ Three consequences are worth writing down:
   tokens, and the three themes are followed through `data-theme` and
   `localStorage['theme']` exactly as before.
 
+### 8.4 Diagnostics for a question
+
+When a print is booked to the wrong spool or stays without its 3MF, whoever
+answers the question needs what the printer reported, and until 1.0.2 nothing of
+it was kept. The page now offers it as text, in two places:
+
+- **Per print**, a button beside the delete button opens a window with the text
+  about that print: where its 3MF came from, `gcode_file`, `ams_mapping`,
+  `ams_mapping2`, `tray_now`, and for each filament the chain from the 3MF to the
+  slot and the spool, with where the spool came from.
+- **For the whole plugin**, the card "Help and diagnostics" at the end of the
+  page: the installed versions, every watched printer with its AMS units and
+  last error, and the three latest prints.
+
+Both offer the same three ways out: copy, download as `.txt`, and a link to the
+GitHub issues. Below the buttons the length is shown against Discord's limit of
+2000 characters, because Discord is where most questions arrive; past it the
+file is the better way. The window and the card say what the text contains and
+what it does not.
+
+**What is kept** is decided by `diagnostics.snapshot_of` when a print starts and
+stored in `bambu_usage_prints.start_report`, see `04_Data_Model.md`. It keeps
+the fields that explain a mapping and nothing that identifies or opens a printer:
+no access code, no serial number, no address, and the query of a signed cloud
+URL is cut off, because the query is the key to the file. Every value is bounded,
+so a firmware that fills a field with something unexpected cannot grow a row.
+The report goes with its print when the history is trimmed.
+
+**The text is built on the server** (`GET /bambu-usage/diagnostics` and
+`/bambu-usage/diagnostics/print/{id}`, plain text) so that a curl gets the same
+text as the page. It is English and its times are UTC whatever the page speaks,
+because it is read by whoever answers and two reports have to compare line by
+line. The page fetches the card's text when it loads rather than on the click,
+because a browser may refuse the clipboard to a click that first waited for the
+network.
+
+**Mail was considered and left out.** A `mailto:` link carries about 2000
+characters at most and no attachment, needs a mail program on the machine with
+the browser, and would put the address on every instance. Sending from the
+server would need mail credentials in FilaMan.
+
+**While a window is open the page behind it stands still** (`overlay-open` on
+the root element, `overscroll-behavior: contain` on the window). Before 1.0.2
+the wheel scrolled the page once a window reached its end, in the spool picker
+and the plate preview as well.
+
 ## 9. Languages
 
 English is the reference language. Further languages can be added without
@@ -656,6 +704,7 @@ a spool swapped mid print. What is still missing from the counterpart to
 | `rules.py` | the arithmetic of consumption, purely functional | no | no |
 | `service.py` | the booking path: recording a print, resolving slots, deducting | no | no |
 | `views.py` | turning stored rows into what the page shows | no | no |
+| `diagnostics.py` | what of a start report is kept, and the diagnostics text built from it, purely functional | no | no |
 | `filaman.py` | the only module that reads FilaMan's own models and services | no | no |
 | `store.py` | the queries on the plugin's own tables | no | no |
 | `models.py` | the plugin's tables and their lifecycle | no | no |
@@ -670,8 +719,8 @@ started is a question about worker processes and lock files, and what a report
 means is a question about printers. One file answering both could not be
 described in a sentence.
 
-**Three of these are pure**, and that is the point of them. `report.py`,
-`rules.py` and `threemf.py` decide things without a database, a printer or
+**Four of these are pure**, and that is the point of them. `report.py`,
+`rules.py`, `threemf.py` and `diagnostics.py` decide things without a database, a printer or
 FilaMan, which is why they carry most of the tests and why the tests need no
 setup at all. Everything that opens a session or a socket is somewhere else.
 

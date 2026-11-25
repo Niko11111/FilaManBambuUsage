@@ -91,6 +91,7 @@ async def start_print(
     started_at: datetime | None = None,
     status: str | None = None,
     tray_tags: dict[str, str] | None = None,
+    start_report: dict[str, Any] | None = None,
 ) -> int:
     """Record a beginning print and return its id.
 
@@ -140,6 +141,7 @@ async def start_print(
         estimated_seconds=metadata.estimated_seconds,
         object_count=metadata.object_count,
         nozzle_diameter=metadata.nozzle_diameter,
+        start_report=start_report,
     )
 
     await store.add_filament_rows(

@@ -74,7 +74,7 @@ merged, because a single message is rarely complete. OpenSpoolMan keeps
 | Field | Meaning | Needed for |
 |---|---|---|
 | `command` | `project_file` marks a submitted print job | print start, network print |
-| `url` | source of the 3MF on a cloud print | fetching the 3MF |
+| `url` | where the 3MF is: a download on a cloud print, a file on the printer otherwise, see below | fetching the 3MF |
 | `gcode_state` | `IDLE`, `PREPARE`, `RUNNING`, `PAUSE`, `FINISH`, `FAILED` | start and end |
 | `print_type` | `local` or `cloud` | which path applies |
 | `gcode_file` | path of the 3MF on the printer | fetching the 3MF over FTPS |
@@ -126,6 +126,29 @@ agree with what FilaMan's Bambu Lab driver checks for the external slot in
 
 **Network and cloud prints.** `print.command == "project_file"` with `print.url`
 set. `ams_mapping` is present. If it is missing, the external spool is meant.
+
+`url` is not always a download; its scheme says where the 3MF is:
+
+| `url` | Meaning | How the 3MF is fetched |
+|---|---|---|
+| `http://`, `https://` | cloud print | HTTP download |
+| `ftp:///<name>` | sent to external storage | FTPS, found in `/` |
+| `brtc://emmc/<name>` | sent to the internal storage of an H2 series printer | FTPS, the printer keeps a copy in `/cache/` |
+| `file:///userdata/model/history/<name>` | started again from the printer's own history; on an H2C also a print sent from Bambu Studio | FTPS by file name: `/userdata` itself is not served, but on the H2C the 3MF was found in `/` or `/cache/` |
+| `file:///media/usb0/<name>` | started from a USB stick or card | FTPS by file name |
+
+Seen on an H2C and an H2D, the latter documented in Bambuddy, see
+`05_Research_Sources.md`. On the H2C a print sent from Bambu Studio reported
+`file:///userdata/model/history/<name>` (24.11.2026, a user's report), which
+Bambuddy reads as a restart from the history only. With 1.0.1 the same user
+confirmed (25.11.2026, cloud mode) that prints from Bambu Studio, from the SD
+card and from internal storage on the panel all got their 3MF and were booked.
+What URL the latter two reported, and which directory held each file, was not
+recorded.
+
+Everything that is not `http` or `https` is looked for over FTPS by its file
+name, in `/` and then `/cache/`. A `/userdata/` miss carries its own message,
+because it is a limit of the printer and no network fault to chase.
 
 **Local prints.** `print_type == "local"` and `gcode_state` moving from
 `PREPARE` to `RUNNING`. The 3MF is named in `gcode_file` and has to be fetched

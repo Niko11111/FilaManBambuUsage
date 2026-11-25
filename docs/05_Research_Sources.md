@@ -125,6 +125,7 @@ Read as of 2026-08-20, MIT.
 | External spool is AMS 255, tray 254 | `config.py`, `EXTERNAL_SPOOL_AMS_ID`, `EXTERNAL_SPOOL_ID` |
 | 3MF over FTPS with pycurl, user `bblp` | `tools_3mf.py`, `download3mfFromFTP()`, `setupPycurlConnection()` |
 | Only the file name is used, path components discarded | `tools_3mf.py`, comment "Pull just filename" |
+| `file://`, `ftp://` and `ftps://` URLs are fetched over FTPS by file name, only `http` is downloaded | `tools_3mf.py`, `getMetaDataFrom3mf()` |
 | `slice_info.config`, `plate_<N>.png`, `plate_<N>.gcode` | `tools_3mf.py`, `getMetaDataFrom3mf()` |
 | Filament number is 1-based, `ams_mapping` 0-based | `spoolman_service.py`, `ams_mapping[filamentId - 1]` |
 | History across `prints`, `filament_usage`, `print_layer_tracking` | `print_history.py`, `create_database()` |
@@ -134,6 +135,19 @@ Read as of 2026-08-20, MIT.
 
 The second to last row is the reason for the rule against module level mutable
 state in `CONTRIBUTING.md`. It is not a hypothetical concern.
+
+## 3b. Evidence in Bambuddy
+
+Read as of 2026-11-24, revision `47604e5a0` (2026-10-06), AGPL-3.0. Facts about
+the printers only, no code taken.
+
+| Claim | Location |
+|---|---|
+| `file:///userdata/model/history/<name>` is a print started again from the printer's history or the app, and port 990 does not serve `/userdata` | `backend/app/services/print_storage.py`, `_INTERNAL_FILE_PREFIXES` and `REASON_INTERNAL_HISTORY` |
+| A touchscreen start announces itself with an unsolicited `project_file` on the report topic carrying that URL | `backend/app/services/bambu_mqtt.py`, `_capture_report_project_file()` |
+| `file:///media/usb0/<name>` was listable and downloadable over FTPS, measured on an H2D | `print_storage.py`, comment on `_LOCAL_FILE_SCHEME` |
+| `brtc://emmc/<name>` is a dispatch to internal storage, and the H2D keeps a copy in `/cache/` | `print_storage.py`, `REASON_INTERNAL_STORAGE`, `_PROBE_DIRECTORIES` |
+| A 3MF is looked for in `/` first, where A1 and P1 uploads land, then `/cache/` | `print_storage.py`, `_PROBE_DIRECTORIES`, `ftp_probe_paths()` |
 
 ## 4. Side finding on the SpoolmanScale documentation
 

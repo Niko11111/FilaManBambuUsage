@@ -46,6 +46,7 @@ import zipfile
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,22 @@ logger = logging.getLogger(__name__)
 # a traversal, so path components are dropped before the fetch.
 FTP_USER = "bblp"
 FTP_PORT = 990
+
+# Where a printer's FTPS server has been seen to keep the 3MF of a print, best
+# first. The report already names the file, only its directory is in question:
+# the root holds what was sent to external storage, /cache/ the copy an H2
+# series printer keeps of a job sent to its internal storage.
+FTPS_SEARCH_DIRECTORIES = ("/", "/cache/")
+
+# A print started again from the printer's own history reports
+# file:///userdata/model/history/<name>, and that storage has not been seen
+# served over FTPS. It is searched all the same; this only decides the message
+# a miss carries, because such a miss is not a network fault to chase.
+INTERNAL_STORAGE_ROOT = "/userdata/"
+
+# Only these are fetched over HTTP. print.url arrives in an MQTT message and
+# names files on the printer itself as well, as file://, ftp:// or brtc://.
+HTTP_URL_PREFIXES = ("http://", "https://")
 
 SLICE_INFO_PATH = "Metadata/slice_info.config"
 PLATE_IMAGE_TEMPLATE = "Metadata/plate_{plate_id}.png"
@@ -167,24 +184,77 @@ class PrintMetadata:
     filament_order: dict[int, int] = field(default_factory=dict)
 
 
+async def download(host: str, access_code: str, location: str, dest: Path) -> None:
+    """Fetch the 3MF *location* names into *dest*, from the cloud or the printer.
+
+    *location* is ``print.url``, or ``print.gcode_file`` where a report has no
+    URL. Only an http or https URL is a download from the cloud. Everything
+    else, ``file://``, ``ftp://``, ``brtc://`` or a bare path, names a file on
+    the printer itself, see docs/03_Bambu_Data_Sources.md.
+    """
+    if is_http_url(location):
+        await download_from_url(location, dest)
+    else:
+        await download_from_printer(host, access_code, location, dest)
+
+
+def is_http_url(location: str) -> bool:
+    """True when *location* is a URL to download over HTTP."""
+    return location.lower().startswith(HTTP_URL_PREFIXES)
+
+
+def is_internal_storage(location: str) -> bool:
+    """True when *location* points into the printer's internal storage."""
+    return urlparse(location).path.startswith(INTERNAL_STORAGE_ROOT)
+
+
+def printer_file_name(location: str) -> str:
+    """The name of the file *location* points at on the printer.
+
+    Scheme and directory are dropped, see FTP_USER. A name carrying a control
+    character is refused rather than cleaned: it ends up in an FTP command, and
+    a line break there would start a second one.
+    """
+    name = location.rpartition("/")[2].strip()
+    if name in ("", ".", ".."):
+        raise ThreeMFError(f"'{location[:60]}' names no file")
+    if any(character < " " or character == "\x7f" for character in name):
+        raise ThreeMFError(f"'{location[:60]}' names a file with a control character")
+    return name
+
+
+def ftps_search_paths(file_name: str) -> list[str]:
+    """The remote paths to try for *file_name*, best first."""
+    return [f"{directory}{file_name}" for directory in FTPS_SEARCH_DIRECTORIES]
+
+
 async def download_from_printer(
     host: str,
     access_code: str,
-    remote_path: str,
+    location: str,
     dest: Path,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> None:
     """Fetch a 3MF off the printer over FTPS into *dest*.
 
-    Only the file name of *remote_path* is used; any directory part is
-    discarded. Raises ThreeMFError on failure, and the caller records the print
-    as no_3mf rather than dropping it.
+    Only the file name of *location* is used, looked for in each of
+    FTPS_SEARCH_DIRECTORIES. Raises ThreeMFError on failure, and the caller
+    records the print as no_3mf rather than dropping it.
     """
-    file_name = Path(remote_path).name
-    if not file_name:
-        raise ThreeMFError(f"remote path '{remote_path}' names no file")
-
-    await asyncio.to_thread(_fetch_over_ftps, host, access_code, file_name, dest, timeout)
+    file_name = printer_file_name(location)
+    found = await asyncio.to_thread(
+        _fetch_over_ftps, host, access_code, file_name, dest, timeout
+    )
+    if found:
+        return
+    if is_internal_storage(location):
+        raise ThreeMFError(
+            f"'{file_name}' was started from the printer's internal storage, "
+            "which the printer does not share over FTPS"
+        )
+    raise ThreeMFError(
+        f"'{file_name}' is in none of {', '.join(FTPS_SEARCH_DIRECTORIES)} on {host}"
+    )
 
 
 def _fetch_over_ftps(
@@ -193,8 +263,11 @@ def _fetch_over_ftps(
     file_name: str,
     dest: Path,
     timeout: float,
-) -> None:
+) -> bool:
     """Blocking FTPS transfer, meant to be run in a worker thread.
+
+    Returns False when the printer answered but has the file in none of the
+    search directories, and raises ThreeMFError when the connection failed.
 
     This drives the connection of bambulabs_api's PrinterFTPClient instead of
     calling its ``download_file()``, for two reasons that both matter here: that
@@ -218,15 +291,31 @@ def _fetch_over_ftps(
         connection.connect(host=host, port=FTP_PORT)
         connection.login(FTP_USER, access_code)
         connection.prot_p()
-        with dest.open("wb") as handle:
-            connection.retrbinary(
-                f"RETR {file_name}", handle.write, blocksize=TRANSFER_BLOCK_BYTES
-            )
+        return _retrieve_first_found(connection, file_name, dest)
     except (OSError, EOFError, ftplib.Error) as exc:
         raise ThreeMFError(f"could not fetch '{file_name}' from {host}: {exc}") from exc
     finally:
         with suppress(OSError, EOFError, ftplib.Error):
             connection.close()
+
+
+def _retrieve_first_found(connection: ftplib.FTP, file_name: str, dest: Path) -> bool:
+    """Retrieve *file_name* into *dest* from the first directory that has it.
+
+    A permanent error (5xx, in practice 550) means "not here" and moves on to
+    the next directory. Anything else is a failing connection and goes up to the
+    caller. Each attempt opens *dest* afresh, so a partial file never stays.
+    """
+    for remote_path in ftps_search_paths(file_name):
+        try:
+            with dest.open("wb") as handle:
+                connection.retrbinary(
+                    f"RETR {remote_path}", handle.write, blocksize=TRANSFER_BLOCK_BYTES
+                )
+            return True
+        except ftplib.error_perm as exc:
+            logger.debug("'%s' is not at %s: %s", file_name, remote_path, exc)
+    return False
 
 
 async def download_from_url(

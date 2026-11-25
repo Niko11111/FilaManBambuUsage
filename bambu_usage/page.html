@@ -518,6 +518,46 @@
     .icon-button .icon { width: 1.1em; height: 1.1em; }
 
     .icon-button.danger:hover { color: var(--error-text); border-color: var(--error-text); }
+
+    /* While a window is open the page behind it stands still. Without this the
+       wheel scrolls the page once the window reaches its end, and at once over
+       the dimmed edge. */
+    html.overlay-open, html.overlay-open body { overflow: hidden; }
+    .overlay, .overlay-box, .diag-text { overscroll-behavior: contain; }
+
+    /* The diagnostics text: what the help card and a print's window offer to
+       copy or save. Monospace, because its values line up in columns. */
+    .diag-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 4px; }
+    .diag-actions .button { display: inline-flex; align-items: center; gap: 8px; }
+    .diag-report { font-size: 0.85rem; font-weight: 600; margin-left: 4px; }
+    .diag-report::after { content: " \2197"; }
+    .diag-note { font-size: 0.85rem; color: var(--success-text); }
+    .diag-note.bad { color: var(--error-text); }
+    .diag-size {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      margin-top: 10px;
+      font-variant-numeric: tabular-nums;
+    }
+    .diag-privacy { color: var(--text-muted); font-size: 0.82rem; margin-bottom: 12px; }
+    .diag-details summary { cursor: pointer; color: var(--accent); font-size: 0.85rem; font-weight: 600; }
+    .diag-text {
+      margin-top: 10px;
+      padding: 12px 14px;
+      max-height: 340px;
+      overflow: auto;
+      background: var(--bg-soft);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font: 0.76rem/1.55 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      white-space: pre;
+      color: var(--text);
+    }
+    /* Out of sight but rendered, because a field that is not rendered cannot
+       be selected and therefore not copied. Fixed, so the page does not jump. */
+    .diag-copy-field { position: fixed; top: 0; left: 0; width: 1px; height: 1px; opacity: 0; }
+    .diag-window { max-width: 760px; min-width: 0; }
+    .diag-window .diag-text { max-height: 46vh; }
     .confirm { max-width: 46ch; }
     .confirm-explain { color: var(--text-muted); font-size: 0.86rem; margin: 10px 0 16px; }
     .danger-button {
@@ -702,6 +742,18 @@
       </form>
     </section>
 
+    <section class="fm-card">
+      <h2 class="fm-card-header" data-bambu-i18n="diagnostics.heading"></h2>
+      <p class="hint" data-bambu-i18n="diagnostics.intro"></p>
+      <div id="help-actions"></div>
+      <p class="diag-size" id="help-size"></p>
+      <p class="diag-privacy" data-bambu-i18n="diagnostics.privacy"></p>
+      <details class="diag-details" id="help-details">
+        <summary data-bambu-i18n="diagnostics.show"></summary>
+        <pre class="diag-text" id="help-text" tabindex="0"></pre>
+      </details>
+    </section>
+
     <footer data-bambu-i18n="page.footer"></footer>
   </div>
 
@@ -726,6 +778,9 @@
     <template id="icon-failed"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6"/><path d="m15 9-6 6"/></svg></template>
     <template id="icon-running"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="currentColor" stroke="none"/></svg></template>
     <template id="icon-warning"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.5 20.5h19L12 3.5z"/><path d="M12 10v4.2"/><path d="M12 17.5h.01"/></svg></template>
+    <template id="icon-diagnostics"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M8 13h2l1.5-3 2 6 1.5-3h1"/></svg></template>
+    <template id="icon-copy"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg></template>
+    <template id="icon-download"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"/><path d="m7 10.5 5 5 5-5"/><path d="M5 20h14"/></svg></template>
 
   <div class="overlay" id="overlay" hidden>
     <div class="overlay-box" id="overlay-box"></div>
@@ -1460,6 +1515,7 @@
         // Not while it runs: booking now would charge the full estimate for
         // material still on the spool. The end books it by itself.
         // Never on a running print: it has not finished being what it is.
+        badges.appendChild(diagnosticsButton(record));
         if (!isRunning) badges.appendChild(deleteButton(record));
 
         if (!isRunning && !record.spent && bookable(record)) {
@@ -2071,6 +2127,7 @@
         box.appendChild(closeButton());
         box.appendChild(content);
         document.getElementById('overlay').hidden = false;
+        document.documentElement.classList.add('overlay-open');
       }
 
       function closeButton() {
@@ -2084,6 +2141,7 @@
 
       function closeOverlay() {
         document.getElementById('overlay').hidden = true;
+        document.documentElement.classList.remove('overlay-open');
         document.getElementById('overlay-box').textContent = '';
       }
 
@@ -2097,6 +2155,174 @@
           return loadSpools().then(function () { return loadHistory(true); });
         }).catch(complain).then(function () {
           button.disabled = false;
+        });
+      }
+
+      /* ── diagnostics ─────────────────────────────────────────── */
+
+      // Discord cuts a message at this many characters, and Discord is where
+      // most questions arrive. Past it the file is the better way.
+      var DISCORD_MESSAGE_LIMIT = 2000;
+      var REPORT_URL = 'https://github.com/Niko11111/FilaManBambuUsage/issues/new';
+      // How long a note under the buttons stays, and how long a saved file's
+      // address is kept alive for the browser to finish with it.
+      var NOTE_VISIBLE_MS = 2500;
+      var REVOKE_DELAY_MS = 10000;
+
+      function readText(path) {
+        // The text is plain text, but a failure still answers with the JSON
+        // error every other route uses, so unwrap reads it the usual way.
+        return fetch(path, {
+          credentials: 'include',
+          headers: { 'Accept': 'text/plain' }
+        }).then(function (response) {
+          return response.ok ? response.text() : unwrap(response);
+        });
+      }
+
+      function sizeNote(text) {
+        var count = text.length.toLocaleString();
+        return text.length <= DISCORD_MESSAGE_LIMIT
+          ? t('diagnostics.fits', { count: count })
+          : t('diagnostics.tooLong', { count: count });
+      }
+
+      function showNote(note, text, bad) {
+        note.textContent = text;
+        note.classList.toggle('bad', Boolean(bad));
+        note.hidden = false;
+        if (!bad) setTimeout(function () { note.hidden = true; }, NOTE_VISIBLE_MS);
+      }
+
+      function copyText(text, shown, note) {
+        // FilaMan mostly runs on plain HTTP in the local network, and there a
+        // browser offers no navigator.clipboard at all. The old copy command
+        // still works there, as long as it runs inside the click.
+        var copied = function () { showNote(note, t('diagnostics.copied')); };
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(copied, function () {
+            if (copyThroughField(text)) copied();
+            else offerSelection(shown, note);
+          });
+          return;
+        }
+        if (copyThroughField(text)) copied();
+        else offerSelection(shown, note);
+      }
+
+      function copyThroughField(text) {
+        // A field of its own rather than the shown text: that one may sit in
+        // a closed section, and what is not rendered cannot be selected.
+        var field = el('textarea', 'diag-copy-field');
+        field.value = text;
+        field.setAttribute('readonly', '');
+        document.body.appendChild(field);
+        field.select();
+        var done = false;
+        try {
+          done = document.execCommand('copy');
+        } catch (error) {
+          done = false;
+        }
+        field.remove();
+        return done;
+      }
+
+      function offerSelection(shown, note) {
+        // The last way out: the text selected, so a keyboard shortcut gets it.
+        var section = shown.closest('details');
+        if (section) section.open = true;
+        var range = document.createRange();
+        range.selectNodeContents(shown);
+        var selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        showNote(note, t('diagnostics.copyFailed'), true);
+      }
+
+      function saveText(text, fileName) {
+        var address = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+        var anchor = document.createElement('a');
+        anchor.href = address;
+        anchor.download = fileName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(function () { URL.revokeObjectURL(address); }, REVOKE_DELAY_MS);
+      }
+
+      function diagnosticsActions(text, shown, fileName) {
+        // Built here rather than in the markup: the buttons carry icons, and
+        // translatePage would wipe an icon together with the old text.
+        var row = el('div', 'diag-actions');
+        var note = el('span', 'diag-note');
+        note.setAttribute('role', 'status');
+        note.hidden = true;
+
+        var copy = withIcon(el('button', 'button', t('diagnostics.copy')), 'copy');
+        copy.type = 'button';
+        copy.addEventListener('click', function () { copyText(text, shown, note); });
+
+        var save = withIcon(el('button', 'button ghost', t('diagnostics.download')), 'download');
+        save.type = 'button';
+        save.addEventListener('click', function () { saveText(text, fileName); });
+
+        var report = el('a', 'diag-report', t('diagnostics.report'));
+        report.href = REPORT_URL;
+        report.target = '_blank';
+        report.rel = 'noopener';
+
+        row.appendChild(copy);
+        row.appendChild(save);
+        row.appendChild(report);
+        row.appendChild(note);
+        return row;
+      }
+
+      function today() {
+        return new Date().toISOString().slice(0, 10);
+      }
+
+      function diagnosticsButton(record) {
+        var button = withIcon(el('button', 'icon-button'), 'diagnostics');
+        button.type = 'button';
+        button.title = t('diagnostics.button');
+        button.setAttribute('aria-label', t('diagnostics.button'));
+        button.addEventListener('click', function () {
+          clearComplaint();
+          readText(MOUNT + '/diagnostics/print/' + record.id).then(function (text) {
+            openPrintDiagnostics(record, text);
+          }).catch(complain);
+        });
+        return button;
+      }
+
+      function openPrintDiagnostics(record, text) {
+        var box = el('div', 'diag-window');
+        box.appendChild(el('div', 'picker-title', t('diagnostics.button')));
+        box.appendChild(el('p', 'picker-detail', record.file_name));
+        box.appendChild(el('p', 'confirm-explain', t('diagnostics.printIntro')));
+        var shown = el('pre', 'diag-text', text);
+        shown.tabIndex = 0;
+        box.appendChild(shown);
+        box.appendChild(el('p', 'diag-size', sizeNote(text)));
+        box.appendChild(el('p', 'diag-privacy', t('diagnostics.privacy')));
+        box.appendChild(diagnosticsActions(text, shown, 'bambu_usage-print-' + record.id + '.txt'));
+        openOverlay(box);
+      }
+
+      function loadHelpText() {
+        // Fetched ahead of a click, because a browser may refuse the clipboard
+        // to a click that first waited for the network.
+        return readText(MOUNT + '/diagnostics').then(function (text) {
+          var shown = document.getElementById('help-text');
+          shown.textContent = text;
+          document.getElementById('help-size').textContent = sizeNote(text);
+          var holder = document.getElementById('help-actions');
+          holder.textContent = '';
+          holder.appendChild(diagnosticsActions(text, shown, 'bambu_usage-diagnostics-' + today() + '.txt'));
+        }).catch(function () {
+          document.getElementById('help-size').textContent = t('diagnostics.loadFailed');
         });
       }
 
@@ -2203,6 +2429,9 @@
         historyFilter.order = this.value;
         loadHistory(true).catch(complain);
       });
+      document.getElementById('help-details').addEventListener('toggle', function () {
+        if (this.open) loadHelpText();
+      });
       document.getElementById('settings-form').addEventListener('submit', saveSettings);
       document.getElementById('settings-scope').addEventListener('change', fillSettings);
 
@@ -2212,7 +2441,7 @@
           // Without the routes nothing below can answer, and every one of them
           // would add its own vague complaint on top of the one notice that
           // actually says what to do.
-          return mounted ? loadEverything() : null;
+          return mounted ? loadEverything().then(loadHelpText) : null;
         })
         .catch(complain);
 

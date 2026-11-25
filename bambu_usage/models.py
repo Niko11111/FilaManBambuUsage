@@ -141,6 +141,10 @@ prints_table = Table(
     Column("thumbnail_mime", String(50), nullable=True),
     Column("error", String(512), nullable=True),
     Column("created_at", DateTime(timezone=True), server_default=func.now()),
+    # What the printer reported when the print started, cut down to what the
+    # diagnostics text shows, as JSON. None for prints recorded before 1.0.2.
+    # See diagnostics.snapshot_of.
+    Column("start_report", Text, nullable=True),
     # A repeated MQTT message must not create a second print. Where the printer
     # reports a subtask id this is exact; the fallback is handled in service.py.
     UniqueConstraint("printer_id", "subtask_id", name="uq_bambu_usage_print_subtask"),

@@ -44,6 +44,7 @@ PLUGIN_MODULES = {
     "rules",
     "views",
     "report",
+    "diagnostics",
 }
 
 # FilaMan's own package. Only filaman.py may reach into it, so that a FilaMan
@@ -82,6 +83,13 @@ FORBIDDEN_IMPORTS: dict[str, dict[str, str]] = {
         "fastapi": "reading a report stays pure",
         "sqlalchemy": "reading a report stays pure",
         "bambulabs_api": "reading a report is not talking to a printer",
+        FILAMAN_PACKAGE: FILAMAN_PACKAGE_REASON,
+    },
+    "diagnostics.py": {
+        **{m: "the diagnostics text is built from plain data alone" for m in PLUGIN_MODULES},
+        "fastapi": "the diagnostics text stays pure",
+        "sqlalchemy": "the diagnostics text stays pure",
+        "bambulabs_api": "the diagnostics text is not talking to a printer",
         FILAMAN_PACKAGE: FILAMAN_PACKAGE_REASON,
     },
     "views.py": {
